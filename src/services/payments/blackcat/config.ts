@@ -1,0 +1,3 @@
+export const BLACKCAT_PAYMENT_METHOD = "pix" as const;
+
+export const BLACKCAT_DEFAULT_PIX_EXPIRATION_MINUTES = 30;
