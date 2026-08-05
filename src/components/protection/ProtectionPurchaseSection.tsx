@@ -169,13 +169,6 @@ export function ProtectionPurchaseSection({
           <p className="mt-2 text-[0.95rem] leading-6 text-slate-600 sm:text-[1rem]">
             Volte ao evento para escolher seus ingressos.
           </p>
-
-          <Link
-            href={`/shows/${showId}`}
-            className="mt-5 inline-flex items-center justify-center rounded-[16px] bg-[#1e9bf0] px-5 py-3 text-[0.95rem] font-medium text-white shadow-[0_10px_24px_rgba(30,155,240,0.28)] transition-all hover:bg-[#1787da] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
-          >
-            Voltar para o evento
-          </Link>
         </div>
       </section>
     );

@@ -212,7 +212,7 @@ export function CustomerEmailModal({
                 disabled={submitting}
                 className="inline-flex h-12 items-center justify-center rounded-[16px] border border-slate-300 bg-white px-5 text-[0.95rem] font-medium text-slate-700 transition-all hover:border-slate-400 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Voltar
+                Cancelar
               </button>
 
               <button

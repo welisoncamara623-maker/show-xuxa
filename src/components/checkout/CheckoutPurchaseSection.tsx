@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import type { TicketOption } from "@/data/shows";
+import { PageBackButton } from "@/components/navigation/PageBackButton";
 import { useTicketStore } from "@/store/ticket-store";
 import {
   calculateFinalTotal,
@@ -50,21 +50,18 @@ function CheckoutSkeleton() {
 function EmptyCheckoutState({ showId }: { showId: string }) {
   return (
     <section className="mx-auto w-full max-w-4xl px-4 sm:px-6 lg:px-0">
-      <div className="mx-auto max-w-2xl rounded-[28px] border border-slate-200 bg-white px-5 py-8 text-center shadow-[0_10px_24px_rgba(15,23,42,0.06)] sm:px-8 sm:py-10">
-        <p className="text-[1rem] font-semibold tracking-[-0.03em] text-slate-950 sm:text-[1.08rem]">
-          Seu checkout ainda não está pronto.
-        </p>
-        <p className="mt-2 text-[0.95rem] leading-6 text-slate-600 sm:text-[1rem]">
-          Volte ao evento para selecionar os ingressos e confirmar a proteção
-          antes de seguir para o pagamento.
-        </p>
+      <div className="flex flex-col items-start gap-4">
+        <PageBackButton fallbackHref={`/shows/${showId}/protection`} />
 
-        <Link
-          href={`/shows/${showId}`}
-          className="mt-5 inline-flex items-center justify-center rounded-[16px] bg-[#1e9bf0] px-5 py-3 text-[0.95rem] font-medium text-white shadow-[0_10px_24px_rgba(30,155,240,0.28)] transition-all hover:bg-[#1787da] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
-        >
-          Voltar ao evento
-        </Link>
+        <div className="mx-auto w-full max-w-2xl rounded-[28px] border border-slate-200 bg-white px-5 py-8 text-center shadow-[0_10px_24px_rgba(15,23,42,0.06)] sm:px-8 sm:py-10">
+          <p className="text-[1rem] font-semibold tracking-[-0.03em] text-slate-950 sm:text-[1.08rem]">
+            Seu checkout ainda não está pronto.
+          </p>
+          <p className="mt-2 text-[0.95rem] leading-6 text-slate-600 sm:text-[1rem]">
+            Volte ao evento para selecionar os ingressos e confirmar a proteção
+            antes de seguir para o pagamento.
+          </p>
+        </div>
       </div>
     </section>
   );
