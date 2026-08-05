@@ -8,7 +8,6 @@ import { DEFAULT_TICKET_SECTORS } from "@/data/ticket-options";
 import { sumSelectedQuantities } from "@/lib/ticket-calculations";
 import { useTicketStore } from "@/store/ticket-store";
 
-import { SectionTitle } from "../SectionTitle";
 import { TicketContinueBar } from "./TicketContinueBar";
 import { TicketSectorGroup } from "./TicketSectorGroup";
 
@@ -27,7 +26,7 @@ function TicketPurchaseSkeleton() {
           {Array.from({ length: 4 }).map((_, index) => (
             <div
               key={index}
-              className="h-[210px] rounded-[24px] border border-slate-200 bg-slate-100/70 shadow-[0_10px_28px_rgba(15,23,42,0.04)] animate-pulse"
+              className="h-[210px] rounded-[16px] border border-slate-200 bg-slate-100/70 animate-pulse"
             />
           ))}
         </div>
@@ -117,41 +116,41 @@ export function TicketPurchaseSection({
 
   return (
     <section className="mx-auto w-full max-w-5xl px-4 sm:px-6 lg:px-0">
-      <div className="rounded-[28px] border border-slate-200 bg-slate-50/70 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)] sm:p-6 lg:p-7">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <SectionTitle title="Ingressos" />
-        </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <h2 className="text-[1.15rem] font-semibold tracking-[-0.04em] text-slate-950 sm:text-[1.35rem]">
+          Ingressos
+        </h2>
+      </div>
 
-        {remainingStock <= 0 ? (
-          <p className="mt-5 text-[0.95rem] font-medium text-slate-500">
-            Ingressos esgotados
-          </p>
-        ) : null}
+      {remainingStock <= 0 ? (
+        <p className="mt-5 text-[0.95rem] font-medium text-slate-500">
+          Ingressos esgotados
+        </p>
+      ) : null}
 
-        <div className="mt-6 grid gap-4 xl:grid-cols-2">
-          {ticketsBySector.map(({ sector, tickets: sectorTickets }) => (
-            <TicketSectorGroup
-              key={sector}
-              sector={sector}
-              tickets={sectorTickets}
-              quantities={selectedQuantities}
-              availableStock={remainingStock}
-              disabled={isNavigating}
-              onIncrement={handleIncrement}
-              onDecrement={handleDecrement}
-            />
-          ))}
-        </div>
-
-        <div className="mt-6">
-          <TicketContinueBar
-            tickets={tickets}
-            selectedQuantities={selectedQuantities}
-            isLoading={isNavigating}
+      <div className="mt-5 grid gap-4 xl:grid-cols-2">
+        {ticketsBySector.map(({ sector, tickets: sectorTickets }) => (
+          <TicketSectorGroup
+            key={sector}
+            sector={sector}
+            tickets={sectorTickets}
+            quantities={selectedQuantities}
+            availableStock={remainingStock}
             disabled={isNavigating}
-            onContinue={handleContinue}
+            onIncrement={handleIncrement}
+            onDecrement={handleDecrement}
           />
-        </div>
+        ))}
+      </div>
+
+      <div className="mt-5">
+        <TicketContinueBar
+          tickets={tickets}
+          selectedQuantities={selectedQuantities}
+          isLoading={isNavigating}
+          disabled={isNavigating}
+          onContinue={handleContinue}
+        />
       </div>
     </section>
   );
