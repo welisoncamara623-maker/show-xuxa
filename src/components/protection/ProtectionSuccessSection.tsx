@@ -82,7 +82,7 @@ export function ProtectionSuccessSection({
 
       return {
         ...item,
-        label: ticket ? ticket.category : item.ticketId,
+        label: ticket ? `${ticket.sector} - ${ticket.category}` : item.ticketId,
       };
     })
     .filter((item) => item.quantity > 0);

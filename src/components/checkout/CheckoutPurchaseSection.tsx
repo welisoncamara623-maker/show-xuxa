@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import type { TicketOption } from "@/data/shows";
@@ -81,6 +82,7 @@ export function CheckoutPurchaseSection({
   hour,
   tickets,
 }: CheckoutPurchaseSectionProps) {
+  const router = useRouter();
   const [hasHydrated, setHasHydrated] = useState(false);
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [isSavingEmail, setIsSavingEmail] = useState(false);
@@ -159,6 +161,19 @@ export function CheckoutPurchaseSection({
     return true;
   };
 
+  const handlePaymentConfirmed = async () => {
+    const result = useTicketStore
+      .getState()
+      .finalizePurchase(showId, selectedProtection);
+
+    if (!result.success) {
+      return false;
+    }
+
+    router.push(`/shows/${showId}/success`);
+    return true;
+  };
+
   if (!hasHydrated) {
     return <CheckoutSkeleton />;
   }
@@ -199,7 +214,14 @@ export function CheckoutPurchaseSection({
             finalTotalInCents={finalTotalInCents}
           />
 
-          <PixCheckoutSection />
+          <PixCheckoutSection
+            showId={showId}
+            customerEmail={draftEmail}
+            selectedProtection={selectedProtection}
+            selectedQuantities={selectedQuantities}
+            tickets={tickets}
+            onPaymentConfirmed={handlePaymentConfirmed}
+          />
         </div>
       </div>
 

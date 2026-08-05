@@ -50,18 +50,11 @@ export default async function ShowDetailsPage(props: ShowPageProps) {
 
         <ShowBanner src={show.bannerImage} alt={show.bannerImageAlt} />
 
-        <section className="mx-auto w-full max-w-4xl px-4 sm:px-6 lg:px-0">
-          <SectionTitle title="Sobre o Evento" />
-
-          <div className="mx-auto mt-8 max-w-3xl text-center sm:mt-10">
-            <p className="text-[0.98rem] font-semibold leading-7 tracking-[-0.02em] text-slate-600 sm:text-[1.1rem]">
-              {show.aboutTitle}
-            </p>
-            <p className="mx-auto mt-5 max-w-3xl text-[0.96rem] italic leading-7 tracking-[-0.015em] text-slate-500 sm:text-[1.02rem]">
-              {show.aboutDescription}
-            </p>
-          </div>
-        </section>
+        <TicketPurchaseSection
+          showId={show.id}
+          initialStock={show.initialStock}
+          tickets={show.tickets}
+        />
 
         <section className="mx-auto w-full max-w-4xl px-4 sm:px-6 lg:px-0">
           <SectionTitle title={show.stadium} />
@@ -105,7 +98,7 @@ export default async function ShowDetailsPage(props: ShowPageProps) {
           </div>
         </section>
 
-        <section className="mx-auto w-full max-w-4xl px-4 pb-14 sm:px-6 lg:px-0 sm:pb-20">
+        <section className="mx-auto w-full max-w-4xl px-4 sm:px-6 lg:px-0">
           <div className="space-y-2">
             {show.ratings.map((rating) => (
               <RatingRow
@@ -118,11 +111,18 @@ export default async function ShowDetailsPage(props: ShowPageProps) {
           </div>
         </section>
 
-        <TicketPurchaseSection
-          showId={show.id}
-          initialStock={show.initialStock}
-          tickets={show.tickets}
-        />
+        <section className="mx-auto w-full max-w-4xl px-4 sm:px-6 lg:px-0">
+          <SectionTitle title="Sobre o Evento" />
+
+          <div className="mx-auto mt-8 max-w-3xl text-center sm:mt-10">
+            <p className="text-[0.98rem] font-semibold leading-7 tracking-[-0.02em] text-slate-600 sm:text-[1.1rem]">
+              {show.aboutTitle}
+            </p>
+            <p className="mx-auto mt-5 max-w-3xl text-[0.96rem] italic leading-7 tracking-[-0.015em] text-slate-500 sm:text-[1.02rem]">
+              {show.aboutDescription}
+            </p>
+          </div>
+        </section>
       </div>
     </main>
   );

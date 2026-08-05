@@ -2,8 +2,8 @@ import type { TicketOption } from "@/data/shows";
 
 export type CheckoutTicketLine = {
   ticketId: string;
-  name: string;
-  category: string;
+  sector: string;
+  category: TicketOption["category"];
   quantity: number;
   unitPriceInCents: number;
   lineTotalInCents: number;
@@ -14,7 +14,7 @@ export function getSelectedTicketLines(
   selectedQuantities: Record<string, number>
 ) {
   return tickets
-    .map((ticket) => {
+    .map((ticket): CheckoutTicketLine | null => {
       const quantity = selectedQuantities[ticket.id] ?? 0;
 
       if (quantity <= 0) {
@@ -23,12 +23,12 @@ export function getSelectedTicketLines(
 
       return {
         ticketId: ticket.id,
-        name: ticket.name,
+        sector: ticket.sector,
         category: ticket.category,
         quantity,
         unitPriceInCents: ticket.priceInCents,
         lineTotalInCents: ticket.priceInCents * quantity,
-      } satisfies CheckoutTicketLine;
+      };
     })
     .filter((item): item is CheckoutTicketLine => item !== null);
 }

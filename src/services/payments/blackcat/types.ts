@@ -1,26 +1,117 @@
-export type BlackCatPixCustomer = {
+export type BlackCatDocumentType = "cpf" | "cnpj";
+
+export type BlackCatCreatePixItem = {
+  title: string;
+  unitPriceInCents: number;
+  quantity: number;
+  tangible?: boolean;
+};
+
+export type BlackCatCreatePixCustomer = {
   name: string;
   email: string;
+  phone: string;
+  document: {
+    number: string;
+    type: BlackCatDocumentType;
+  };
 };
 
-export type BlackCatPixItem = {
-  id: string;
+export type CreatePixPaymentInput = {
+  orderId: string;
+  customer: {
+    email: string;
+    name?: string;
+    phone?: string;
+    document?: {
+      number: string;
+      type: BlackCatDocumentType;
+    };
+  };
+  amountInCents: number;
   description: string;
-  quantity: number;
-  unitAmountInCents: number;
+  items: BlackCatCreatePixItem[];
+  postbackUrl: string;
+  expiresInDays?: number;
 };
 
-export type BlackCatCreatePixChargeInput = {
-  showId: string;
-  customer: BlackCatPixCustomer;
-  items: BlackCatPixItem[];
-  totalAmountInCents: number;
-  expiresInMinutes: number;
+export type PixPaymentStatus =
+  | "pending"
+  | "paid"
+  | "failed"
+  | "expired"
+  | "refunded";
+
+export type PixPayment = {
+  provider: "blackcat";
+  providerPaymentId: string;
+  status: PixPaymentStatus;
+  amountInCents: number;
+  copyPasteCode: string;
+  qrCodeImageUrl?: string;
+  qrCodeBase64?: string;
+  expiresAt?: string;
 };
 
-export type BlackCatCreatePixChargeResult = {
-  chargeId: string;
-  pixQrCode: string;
-  pixCopyPaste: string;
-  expiresAt: string;
+export type PixPaymentStatusResponse = {
+  provider: "blackcat";
+  providerPaymentId: string;
+  status: PixPaymentStatus;
+  amountInCents: number;
+  expiresAt?: string;
+  paidAt?: string;
+  endToEndId?: string;
+};
+
+export type BlackCatCreateSaleRequest = {
+  amount: number;
+  currency: "BRL";
+  paymentMethod: "pix";
+  items: Array<{
+    title: string;
+    unitPrice: number;
+    quantity: number;
+    tangible?: boolean;
+  }>;
+  customer: BlackCatCreatePixCustomer;
+  pix?: {
+    expiresInDays?: number;
+  };
+  postbackUrl?: string;
+  metadata?: string;
+  externalRef?: string;
+};
+
+export type BlackCatCreateSaleResponse = {
+  success: true;
+  data: {
+    transactionId: string;
+    status: "PENDING" | "PAID" | "CANCELLED";
+    paymentMethod: string;
+    amount: number;
+    netAmount: number;
+    fees: number;
+    invoiceUrl?: string;
+    createdAt: string;
+    paymentData?: {
+      qrCode?: string;
+      qrCodeBase64?: string;
+      copyPaste?: string;
+      expiresAt?: string;
+    };
+  };
+};
+
+export type BlackCatTransactionStatusResponse = {
+  success: true;
+  data: {
+    transactionId: string;
+    status: "PENDING" | "PAID" | "CANCELLED" | "REFUNDED";
+    paymentMethod: string;
+    amount: number;
+    netAmount: number;
+    fees: number;
+    paidAt?: string;
+    endToEndId?: string;
+  };
 };

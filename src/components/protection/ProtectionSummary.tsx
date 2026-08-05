@@ -38,7 +38,10 @@ export function ProtectionSummary({
         return null;
       }
 
-      return formatTicketSummary(quantity, ticket.category);
+      return formatTicketSummary(
+        quantity,
+        `${ticket.sector} - ${ticket.category}`
+      );
     })
     .filter((item): item is string => Boolean(item));
 

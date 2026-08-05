@@ -1,16 +1,13 @@
+import { DEFAULT_TICKET_OPTIONS } from "./ticket-options";
+import type { TicketOption } from "./ticket-options";
+
 export type ShowRating = {
   label: string;
   rating: number;
   maxRating: number;
 };
 
-export type TicketOption = {
-  id: string;
-  name: string;
-  category: string;
-  priceInCents: number;
-  description?: string;
-};
+export type { TicketOption } from "./ticket-options";
 
 export type ShowData = {
   id: string;
@@ -43,27 +40,10 @@ const aboutTitle = "Xuxa anuncia “O Último Voo da Nave” em Curitiba e Belo 
 const aboutDescription =
   "Em uma realização da 30e e apresentadas pelo Itaú Live, as performances terão pré-venda exclusiva para clientes do banco a partir de 10 de abril, às 12h; a venda geral começa no dia 13 de abril, às 14h, ambas pelo site da Eventim";
 
-const baseTickets: TicketOption[] = [
-  {
-    id: "half-student",
-    name: "CADEIRA SUPERIOR",
-    category: "MEIA-ESTUDANTE",
-    priceInCents: 8250,
-    description:
-      "Obrigatória a apresentação de documento que comprove o direito à meia-entrada.",
-  },
-  {
-    id: "full",
-    name: "CADEIRA SUPERIOR",
-    category: "INTEIRA",
-    priceInCents: 9890,
-  },
-];
-
 const initialStock = 1000;
 
 function createTickets() {
-  return baseTickets.map((ticket) => ({ ...ticket }));
+  return DEFAULT_TICKET_OPTIONS.map((ticket) => ({ ...ticket }));
 }
 
 function createGoogleMapsHref(address: string) {

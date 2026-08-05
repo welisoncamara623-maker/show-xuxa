@@ -45,7 +45,7 @@ export function roundCurrency(value: number) {
 }
 
 export function formatTicketSummary(quantity: number, label: string) {
-  return `${quantity} ${quantity === 1 ? "ingresso" : "ingressos"} ${label.toLowerCase()}`;
+  return `${quantity} ${quantity === 1 ? "ingresso" : "ingressos"} ${label}`;
 }
 
 export function formatProtectionTotal(total: number) {
