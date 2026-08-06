@@ -3,11 +3,14 @@ import "server-only";
 import { z } from "zod";
 
 import { blackCatFetchJson } from "./blackcat-client";
-import { BlackCatResponseValidationError } from "./errors";
+import {
+  BlackCatBusinessError,
+  BlackCatResponseValidationError,
+} from "./errors";
 import {
   blackCatCreateSaleResponseSchema,
-  type BlackCatCreateSaleResponseFromSchema,
 } from "./schemas";
+import { normalizeBlackCatPixPayment } from "./normalize-pix-payment";
 import type {
   BlackCatCreatePixCustomer,
   BlackCatCreateSaleRequest,
@@ -15,7 +18,7 @@ import type {
   PixPayment,
 } from "./types";
 
-const DEFAULT_PIX_EXPIRES_IN_DAYS = 2;
+const DEFAULT_PIX_EXPIRES_IN_DAYS = 1;
 
 const createPixPaymentInputSchema = z.object({
   orderId: z.string().min(1),
@@ -45,18 +48,6 @@ const createPixPaymentInputSchema = z.object({
   postbackUrl: z.string().url(),
   expiresInDays: z.number().int().positive().optional(),
 });
-
-function mapStatus(status: BlackCatCreateSaleResponseFromSchema["data"]["status"]): PixPayment["status"] {
-  if (status === "PAID") {
-    return "paid";
-  }
-
-  if (status === "CANCELLED") {
-    return "expired";
-  }
-
-  return "pending";
-}
 
 function buildFallbackCustomerName(email: string) {
   const localPart = email.split("@")[0]?.replace(/[._-]+/g, " ").trim();
@@ -146,7 +137,7 @@ export async function createBlackCatPixPayment(
   };
 
   const rawResponse: unknown = await blackCatFetchJson<unknown>(
-    "/sales/create-sale",
+    "sales/create-sale",
     {
       method: "POST",
       body: JSON.stringify(requestBody),
@@ -161,16 +152,12 @@ export async function createBlackCatPixPayment(
     );
   }
 
-  const paymentData = parsedResponse.data.data.paymentData;
+  if (!parsedResponse.data.success) {
+    throw new BlackCatBusinessError(
+      parsedResponse.data.message,
+      parsedResponse.data.code
+    );
+  }
 
-  return {
-    provider: "blackcat",
-    providerPaymentId: parsedResponse.data.data.transactionId,
-    status: mapStatus(parsedResponse.data.data.status),
-    amountInCents: parsedResponse.data.data.amount,
-    copyPasteCode: paymentData?.copyPaste ?? "",
-    qrCodeImageUrl: paymentData?.qrCode,
-    qrCodeBase64: paymentData?.qrCodeBase64,
-    expiresAt: paymentData?.expiresAt,
-  };
+  return await normalizeBlackCatPixPayment(parsedResponse.data);
 }

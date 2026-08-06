@@ -36,9 +36,9 @@ export type ShowData = {
 };
 
 const eventName = "XUXA - O ÚLTIMO VOO DA NAVE";
-const aboutTitle = "Xuxa anuncia “O Último Voo da Nave” em Curitiba e Belo Horizonte";
-const aboutDescription =
-  "Em uma realização da 30e e apresentadas pelo Itaú Live, as performances terão pré-venda exclusiva para clientes do banco a partir de 10 de abril, às 12h; a venda geral começa no dia 13 de abril, às 14h, ambas pelo site da Eventim";
+export const aboutTitle = "Xuxa Tour 2026 – Um Show Mágico para os Baixinhos";
+export const aboutDescription =
+  "Prepare-se para viver um momento inesquecível! A Xuxa Tour 2026 chegou para encantar toda a família com um espetáculo lúdico e cheio de alegria, especialmente pensado para o público infantil.\n\nEm um cenário colorido e interativo, a eterna Rainha dos Baixinhos apresenta um show repleto de músicas que marcaram gerações, coreografias animadas e uma mensagem positiva de amizade e respeito.\n\nÉ a oportunidade perfeita para os pequenos (e também para os adultos que ainda guardam a criança no coração) cantarem juntos, reviverem grandes sucessos e criarem memórias afetivas que durarão para sempre.";
 
 const initialStock = 1000;
 

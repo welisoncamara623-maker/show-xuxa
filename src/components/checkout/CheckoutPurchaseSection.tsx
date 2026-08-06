@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import type { TicketOption } from "@/data/shows";
 import { PageBackButton } from "@/components/navigation/PageBackButton";
@@ -33,19 +33,6 @@ type CheckoutPurchaseSectionProps = {
   hour: string;
   tickets: TicketOption[];
 };
-
-function CheckoutSkeleton() {
-  return (
-    <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 lg:px-0">
-      <div className="space-y-4" aria-hidden="true">
-        <div className="h-[180px] animate-pulse rounded-[24px] border border-slate-200 bg-slate-100/70 shadow-[0_10px_24px_rgba(15,23,42,0.05)]" />
-        <div className="h-[220px] animate-pulse rounded-[24px] border border-slate-200 bg-slate-100/70 shadow-[0_10px_24px_rgba(15,23,42,0.05)]" />
-        <div className="h-[200px] animate-pulse rounded-[24px] border border-slate-200 bg-slate-100/70 shadow-[0_10px_24px_rgba(15,23,42,0.05)]" />
-        <div className="h-[190px] animate-pulse rounded-[24px] border border-slate-200 bg-slate-100/70 shadow-[0_10px_24px_rgba(15,23,42,0.05)]" />
-      </div>
-    </div>
-  );
-}
 
 function EmptyCheckoutState({ showId }: { showId: string }) {
   return (
@@ -80,27 +67,12 @@ export function CheckoutPurchaseSection({
   tickets,
 }: CheckoutPurchaseSectionProps) {
   const router = useRouter();
-  const [hasHydrated, setHasHydrated] = useState(false);
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [isSavingEmail, setIsSavingEmail] = useState(false);
 
   const showState = useTicketStore((state) => state.shows[showId]);
   const checkoutDraft = useTicketStore((state) => state.checkoutDrafts[showId]);
   const setCustomerEmail = useTicketStore((state) => state.setCustomerEmail);
-
-  useEffect(() => {
-    let isActive = true;
-
-    void Promise.resolve(useTicketStore.persist.rehydrate()).then(() => {
-      if (isActive) {
-        setHasHydrated(true);
-      }
-    });
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
 
   const selectedQuantities = showState?.selectedQuantities ?? {};
   const totalSelected = sumSelectedQuantities(selectedQuantities);
@@ -124,7 +96,6 @@ export function CheckoutPurchaseSection({
   );
 
   const hasCheckoutData =
-    hasHydrated &&
     Boolean(showState) &&
     totalSelected > 0 &&
     Boolean(draftEmail) &&
@@ -170,10 +141,6 @@ export function CheckoutPurchaseSection({
     router.push(`/shows/${showId}/success`);
     return true;
   };
-
-  if (!hasHydrated) {
-    return <CheckoutSkeleton />;
-  }
 
   if (!hasCheckoutData) {
     return <EmptyCheckoutState showId={showId} />;

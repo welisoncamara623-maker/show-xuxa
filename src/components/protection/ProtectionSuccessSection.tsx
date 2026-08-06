@@ -1,7 +1,6 @@
 "use client";
 
 import { CheckCircle2 } from "lucide-react";
-import { useEffect, useState } from "react";
 
 import type { TicketOption } from "@/data/shows";
 import { formatCurrencyBRL, fromCents } from "@/lib/currency";
@@ -19,40 +18,13 @@ function formatPurchaseItem(quantity: number, label: string) {
   return `${quantity} ${quantity === 1 ? "ingresso" : "ingressos"} ${label.toLowerCase()}`;
 }
 
-function SuccessSkeleton() {
-  return (
-    <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 lg:px-0">
-      <div className="h-[280px] rounded-[28px] border border-slate-200 bg-slate-100/70 shadow-[0_10px_28px_rgba(15,23,42,0.04)] animate-pulse" />
-    </div>
-  );
-}
-
 export function ProtectionSuccessSection({
   showId,
   showName,
   backHref,
   tickets,
 }: ProtectionSuccessSectionProps) {
-  const [hasHydrated, setHasHydrated] = useState(false);
   const purchase = useTicketStore((state) => state.shows[showId]?.lastPurchase ?? null);
-
-  useEffect(() => {
-    let isActive = true;
-
-    void Promise.resolve(useTicketStore.persist.rehydrate()).then(() => {
-      if (isActive) {
-        setHasHydrated(true);
-      }
-    });
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
-
-  if (!hasHydrated) {
-    return <SuccessSkeleton />;
-  }
 
   if (!purchase) {
     return (

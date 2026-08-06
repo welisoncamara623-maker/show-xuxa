@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
 
 import { getShowById, type TicketOption } from "@/data/shows";
 import {
@@ -57,14 +56,6 @@ export type CheckoutResult =
       reason: "EMPTY_CART" | "INSUFFICIENT_STOCK" | "SHOW_NOT_INITIALIZED";
     };
 
-type PersistedLegacyShowState = {
-  stock: number;
-  selectedQuantity?: number;
-  selectedQuantities?: Record<string, number>;
-  selectedProtection?: ProtectionOption;
-  lastPurchase?: FinalizedPurchase | null;
-};
-
 type TicketStore = {
   shows: Record<string, ShowTicketState>;
   checkoutDrafts: Record<string, CheckoutDraft>;
@@ -88,20 +79,8 @@ type TicketStore = {
   resetStore: () => void;
 };
 
-// Persistência temporária por navegador.
+// Estado temporário em memória.
 // O estoque global deverá ser movido para o backend quando houver vendas reais.
-function normalizeSelectedQuantities(
-  selectedQuantities: Record<string, number> | undefined
-) {
-  if (!selectedQuantities) {
-    return {};
-  }
-
-  return Object.fromEntries(
-    Object.entries(selectedQuantities).filter(([, quantity]) => quantity > 0)
-  );
-}
-
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
@@ -112,87 +91,6 @@ function isValidEmail(email: string) {
 
 function getShowTickets(showId: string): TicketOption[] | null {
   return getShowById(showId)?.tickets ?? null;
-}
-
-function normalizeShowState(
-  state: PersistedLegacyShowState | ShowTicketState
-): ShowTicketState {
-  const selectedQuantities = normalizeSelectedQuantities(
-    "selectedQuantities" in state ? state.selectedQuantities : undefined
-  );
-
-  return {
-    stock: state.stock,
-    selectedQuantities,
-    selectedProtection:
-      "selectedProtection" in state &&
-      state.selectedProtection === "ticket-with-insurance"
-        ? "ticket-with-insurance"
-        : "ticket-only",
-    lastPurchase:
-      "lastPurchase" in state && state.lastPurchase
-        ? state.lastPurchase
-        : null,
-  };
-}
-
-function migratePersistedState(
-  persistedState: unknown
-): {
-  shows: Record<string, ShowTicketState>;
-  checkoutDrafts: Record<string, CheckoutDraft>;
-} {
-  if (!persistedState || typeof persistedState !== "object") {
-    return { shows: {}, checkoutDrafts: {} };
-  }
-
-  const rawShows = "shows" in persistedState ? persistedState.shows : undefined;
-  const rawCheckoutDrafts =
-    "checkoutDrafts" in persistedState ? persistedState.checkoutDrafts : undefined;
-
-  const legacyShows = rawShows as Record<string, unknown> | undefined;
-  const legacyDrafts = rawCheckoutDrafts as Record<string, unknown> | undefined;
-
-  const shows = legacyShows
-    ? Object.fromEntries(
-        Object.entries(legacyShows).map(([showId, state]) => [
-          showId,
-          normalizeShowState(state as PersistedLegacyShowState),
-        ])
-      )
-    : {};
-
-  const checkoutDrafts = legacyDrafts
-    ? Object.fromEntries(
-        Object.entries(legacyDrafts)
-          .map(([showId, draft]) => {
-            const nextDraft = draft as Partial<CheckoutDraft> | undefined;
-
-            if (
-              !nextDraft ||
-              typeof nextDraft.customerEmail !== "string" ||
-              typeof nextDraft.selectedProtection !== "string"
-            ) {
-              return null;
-            }
-
-            return [
-              showId,
-              {
-                showId,
-                customerEmail: nextDraft.customerEmail,
-                selectedProtection:
-                  nextDraft.selectedProtection === "ticket-with-insurance"
-                    ? "ticket-with-insurance"
-                    : "ticket-only",
-              },
-            ] as const;
-          })
-          .filter((item): item is readonly [string, CheckoutDraft] => item !== null)
-      )
-    : {};
-
-  return { shows, checkoutDrafts };
 }
 
 function getShowState(state: TicketStore, showId: string) {
@@ -250,302 +148,279 @@ function buildPurchase(
   } satisfies FinalizedPurchase;
 }
 
-export const useTicketStore = create<TicketStore>()(
-  persist(
-    (set) => ({
-      shows: {},
-      checkoutDrafts: {},
-      initializeShow: (showId, initialStock) => {
-        set((state) => {
-          const currentShow = state.shows[showId];
+export const useTicketStore = create<TicketStore>((set) => ({
+  shows: {},
+  checkoutDrafts: {},
+  initializeShow: (showId, initialStock) => {
+    set((state) => {
+      const currentShow = state.shows[showId];
 
-          if (currentShow) {
-            return {
-              shows: {
-                ...state.shows,
-                [showId]: {
-                  ...currentShow,
-                  selectedProtection:
-                    currentShow.selectedProtection ?? "ticket-only",
-                  lastPurchase: currentShow.lastPurchase ?? null,
-                },
-              },
-            };
-          }
-
-          return {
-            shows: {
-              ...state.shows,
-              [showId]: {
-                stock: initialStock,
-                selectedQuantities: {},
-                selectedProtection: "ticket-only",
-                lastPurchase: null,
-              },
+      if (currentShow) {
+        return {
+          shows: {
+            ...state.shows,
+            [showId]: {
+              ...currentShow,
+              selectedProtection: currentShow.selectedProtection ?? "ticket-only",
+              lastPurchase: currentShow.lastPurchase ?? null,
             },
-          };
-        });
-      },
-      incrementQuantity: (showId, ticketId) => {
-        set((state) => {
-          const currentShow = getShowState(state, showId);
+          },
+        };
+      }
 
-          if (!currentShow) {
-            return {};
-          }
+      return {
+        shows: {
+          ...state.shows,
+          [showId]: {
+            stock: initialStock,
+            selectedQuantities: {},
+            selectedProtection: "ticket-only",
+            lastPurchase: null,
+          },
+        },
+      };
+    });
+  },
+  incrementQuantity: (showId, ticketId) => {
+    set((state) => {
+      const currentShow = getShowState(state, showId);
 
-          const totalSelected = sumSelectedQuantities(
-            currentShow.selectedQuantities
-          );
+      if (!currentShow) {
+        return {};
+      }
 
-          if (totalSelected >= currentShow.stock) {
-            return {};
-          }
+      const totalSelected = sumSelectedQuantities(currentShow.selectedQuantities);
 
-          return {
-            shows: {
-              ...state.shows,
-              [showId]: {
-                ...currentShow,
-                selectedQuantities: {
-                  ...currentShow.selectedQuantities,
-                  [ticketId]:
-                    (currentShow.selectedQuantities[ticketId] ?? 0) + 1,
-                },
-              },
+      if (totalSelected >= currentShow.stock) {
+        return {};
+      }
+
+      return {
+        shows: {
+          ...state.shows,
+          [showId]: {
+            ...currentShow,
+            selectedQuantities: {
+              ...currentShow.selectedQuantities,
+              [ticketId]: (currentShow.selectedQuantities[ticketId] ?? 0) + 1,
             },
-          };
-        });
-      },
-      decrementQuantity: (showId, ticketId) => {
-        set((state) => {
-          const currentShow = getShowState(state, showId);
-          const currentQuantity = currentShow?.selectedQuantities[ticketId] ?? 0;
+          },
+        },
+      };
+    });
+  },
+  decrementQuantity: (showId, ticketId) => {
+    set((state) => {
+      const currentShow = getShowState(state, showId);
+      const currentQuantity = currentShow?.selectedQuantities[ticketId] ?? 0;
 
-          if (!currentShow || currentQuantity <= 0) {
-            return {};
-          }
+      if (!currentShow || currentQuantity <= 0) {
+        return {};
+      }
 
-          const nextSelectedQuantities = {
-            ...currentShow.selectedQuantities,
-          };
+      const nextSelectedQuantities = {
+        ...currentShow.selectedQuantities,
+      };
 
-          if (currentQuantity === 1) {
-            delete nextSelectedQuantities[ticketId];
-          } else {
-            nextSelectedQuantities[ticketId] = currentQuantity - 1;
-          }
+      if (currentQuantity === 1) {
+        delete nextSelectedQuantities[ticketId];
+      } else {
+        nextSelectedQuantities[ticketId] = currentQuantity - 1;
+      }
 
-          return {
-            shows: {
-              ...state.shows,
-              [showId]: {
-                ...currentShow,
-                selectedQuantities: nextSelectedQuantities,
-              },
+      return {
+        shows: {
+          ...state.shows,
+          [showId]: {
+            ...currentShow,
+            selectedQuantities: nextSelectedQuantities,
+          },
+        },
+      };
+    });
+  },
+  setSelectedProtection: (showId, protection) => {
+    set((state) => {
+      const currentShow = getShowState(state, showId);
+
+      if (!currentShow) {
+        return {};
+      }
+
+      return {
+        shows: {
+          ...state.shows,
+          [showId]: {
+            ...currentShow,
+            selectedProtection: protection,
+          },
+        },
+      };
+    });
+  },
+  setCustomerEmail: (showId, email) => {
+    set((state) => {
+      const currentDraft = state.checkoutDrafts[showId];
+
+      if (!currentDraft) {
+        const currentShow = getShowState(state, showId);
+
+        if (!currentShow) {
+          return {};
+        }
+
+        return {
+          checkoutDrafts: {
+            ...state.checkoutDrafts,
+            [showId]: {
+              showId,
+              customerEmail: normalizeEmail(email),
+              selectedProtection: currentShow.selectedProtection,
             },
-          };
-        });
-      },
-      setSelectedProtection: (showId, protection) => {
-        set((state) => {
-          const currentShow = getShowState(state, showId);
+          },
+        };
+      }
 
-          if (!currentShow) {
-            return {};
-          }
+      return {
+        checkoutDrafts: {
+          ...state.checkoutDrafts,
+          [showId]: {
+            ...currentDraft,
+            customerEmail: normalizeEmail(email),
+          },
+        },
+      };
+    });
+  },
+  prepareCheckout: (showId, email, protection) => {
+    let result: PrepareCheckoutResult = {
+      success: false,
+      reason: "SHOW_NOT_INITIALIZED",
+    };
 
-          return {
-            shows: {
-              ...state.shows,
-              [showId]: {
-                ...currentShow,
-                selectedProtection: protection,
-              },
-            },
-          };
-        });
-      },
-      setCustomerEmail: (showId, email) => {
-        set((state) => {
-          const currentDraft = state.checkoutDrafts[showId];
+    const normalizedEmail = normalizeEmail(email);
 
-          if (!currentDraft) {
-            const currentShow = getShowState(state, showId);
+    set((state) => {
+      const currentShow = getShowState(state, showId);
 
-            if (!currentShow) {
-              return {};
-            }
-
-            return {
-              checkoutDrafts: {
-                ...state.checkoutDrafts,
-                [showId]: {
-                  showId,
-                  customerEmail: normalizeEmail(email),
-                  selectedProtection: currentShow.selectedProtection,
-                },
-              },
-            };
-          }
-
-          return {
-            checkoutDrafts: {
-              ...state.checkoutDrafts,
-              [showId]: {
-                ...currentDraft,
-                customerEmail: normalizeEmail(email),
-              },
-            },
-          };
-        });
-      },
-      prepareCheckout: (showId, email, protection) => {
-        let result: PrepareCheckoutResult = {
+      if (!currentShow) {
+        result = {
           success: false,
           reason: "SHOW_NOT_INITIALIZED",
         };
+        return {};
+      }
 
-        const normalizedEmail = normalizeEmail(email);
+      if (!isValidEmail(normalizedEmail)) {
+        result = {
+          success: false,
+          reason: "INVALID_EMAIL",
+        };
+        return {};
+      }
 
-        set((state) => {
-          const currentShow = getShowState(state, showId);
+      const totalSelected = sumSelectedQuantities(currentShow.selectedQuantities);
 
-          if (!currentShow) {
-            result = {
-              success: false,
-              reason: "SHOW_NOT_INITIALIZED",
-            };
-            return {};
-          }
+      if (totalSelected <= 0) {
+        result = {
+          success: false,
+          reason: "EMPTY_CART",
+        };
+        return {};
+      }
 
-          if (!isValidEmail(normalizedEmail)) {
-            result = {
-              success: false,
-              reason: "INVALID_EMAIL",
-            };
-            return {};
-          }
+      result = {
+        success: true,
+      };
 
-          const totalSelected = sumSelectedQuantities(
-            currentShow.selectedQuantities
-          );
+      return {
+        shows: {
+          ...state.shows,
+          [showId]: {
+            ...currentShow,
+            selectedProtection: protection,
+          },
+        },
+        checkoutDrafts: {
+          ...state.checkoutDrafts,
+          [showId]: {
+            showId,
+            customerEmail: normalizedEmail,
+            selectedProtection: protection,
+          },
+        },
+      };
+    });
 
-          if (totalSelected <= 0) {
-            result = {
-              success: false,
-              reason: "EMPTY_CART",
-            };
-            return {};
-          }
+    return result;
+  },
+  finalizePurchase: (showId, protection) => {
+    let result: CheckoutResult = {
+      success: false,
+      reason: "SHOW_NOT_INITIALIZED",
+    };
 
-          result = {
-            success: true,
-          };
+    set((state) => {
+      const currentShow = getShowState(state, showId);
 
-          return {
-            shows: {
-              ...state.shows,
-              [showId]: {
-                ...currentShow,
-                selectedProtection: protection,
-              },
-            },
-            checkoutDrafts: {
-              ...state.checkoutDrafts,
-              [showId]: {
-                showId,
-                customerEmail: normalizedEmail,
-                selectedProtection: protection,
-              },
-            },
-          };
-        });
-
-        return result;
-      },
-      finalizePurchase: (showId, protection) => {
-        let result: CheckoutResult = {
+      if (!currentShow) {
+        result = {
           success: false,
           reason: "SHOW_NOT_INITIALIZED",
         };
+        return {};
+      }
 
-        set((state) => {
-          const currentShow = getShowState(state, showId);
+      const totalSelected = sumSelectedQuantities(currentShow.selectedQuantities);
 
-          if (!currentShow) {
-            result = {
-              success: false,
-              reason: "SHOW_NOT_INITIALIZED",
-            };
-            return {};
-          }
+      if (totalSelected <= 0) {
+        result = {
+          success: false,
+          reason: "EMPTY_CART",
+        };
+        return {};
+      }
 
-          const totalSelected = sumSelectedQuantities(
-            currentShow.selectedQuantities
-          );
+      if (totalSelected > currentShow.stock) {
+        result = {
+          success: false,
+          reason: "INSUFFICIENT_STOCK",
+        };
+        return {};
+      }
 
-          if (totalSelected <= 0) {
-            result = {
-              success: false,
-              reason: "EMPTY_CART",
-            };
-            return {};
-          }
+      const purchase = buildPurchase(showId, currentShow, protection);
 
-          if (totalSelected > currentShow.stock) {
-            result = {
-              success: false,
-              reason: "INSUFFICIENT_STOCK",
-            };
-            return {};
-          }
+      if (!purchase) {
+        result = {
+          success: false,
+          reason: "SHOW_NOT_INITIALIZED",
+        };
+        return {};
+      }
 
-          const purchase = buildPurchase(showId, currentShow, protection);
+      result = {
+        success: true,
+        purchase,
+        remainingStock: currentShow.stock - totalSelected,
+      };
 
-          if (!purchase) {
-            result = {
-              success: false,
-              reason: "SHOW_NOT_INITIALIZED",
-            };
-            return {};
-          }
+      return {
+        shows: {
+          ...state.shows,
+          [showId]: {
+            stock: currentShow.stock - totalSelected,
+            selectedQuantities: {},
+            selectedProtection: "ticket-only",
+            lastPurchase: purchase,
+          },
+        },
+      };
+    });
 
-          result = {
-            success: true,
-            purchase,
-            remainingStock: currentShow.stock - totalSelected,
-          };
-
-          return {
-            shows: {
-              ...state.shows,
-              [showId]: {
-                stock: currentShow.stock - totalSelected,
-                selectedQuantities: {},
-                selectedProtection: "ticket-only",
-                lastPurchase: purchase,
-              },
-            },
-          };
-        });
-
-        return result;
-      },
-      resetStore: () => {
-        set({ shows: {}, checkoutDrafts: {} });
-      },
-    }),
-    {
-      name: "show-ticket-store",
-      version: 4,
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({
-        shows: state.shows,
-        checkoutDrafts: state.checkoutDrafts,
-      }),
-      migrate: (persistedState) => migratePersistedState(persistedState),
-      skipHydration: true,
-    }
-  )
-);
+    return result;
+  },
+  resetStore: () => {
+    set({ shows: {}, checkoutDrafts: {} });
+  },
+}));

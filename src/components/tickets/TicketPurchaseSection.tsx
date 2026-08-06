@@ -42,7 +42,6 @@ export function TicketPurchaseSection({
   tickets,
 }: TicketPurchaseSectionProps) {
   const router = useRouter();
-  const [hasHydrated, setHasHydrated] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
 
   const showState = useTicketStore((state) => state.shows[showId]);
@@ -51,30 +50,13 @@ export function TicketPurchaseSection({
   const decrementQuantity = useTicketStore((state) => state.decrementQuantity);
 
   useEffect(() => {
-    let isActive = true;
-
-    void Promise.resolve(useTicketStore.persist.rehydrate()).then(() => {
-      if (isActive) {
-        setHasHydrated(true);
-      }
-    });
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (hasHydrated) {
-      initializeShow(showId, initialStock);
-    }
-  }, [hasHydrated, initialStock, initializeShow, showId]);
+    initializeShow(showId, initialStock);
+  }, [initializeShow, initialStock, showId]);
 
   const selectedQuantities = showState?.selectedQuantities ?? {};
   const stock = showState?.stock ?? 0;
   const totalSelected = sumSelectedQuantities(selectedQuantities);
   const remainingStock = Math.max(stock - totalSelected, 0);
-  const isReady = hasHydrated && Boolean(showState);
 
   const ticketsBySector = useMemo(
     () =>
@@ -86,7 +68,7 @@ export function TicketPurchaseSection({
   );
 
   const handleIncrement = (ticketId: string) => {
-    if (!isReady || isNavigating || remainingStock <= 0) {
+    if (!showState || isNavigating || remainingStock <= 0) {
       return;
     }
 
@@ -94,7 +76,7 @@ export function TicketPurchaseSection({
   };
 
   const handleDecrement = (ticketId: string) => {
-    if (!isReady || isNavigating) {
+    if (!showState || isNavigating) {
       return;
     }
 
@@ -102,7 +84,7 @@ export function TicketPurchaseSection({
   };
 
   const handleContinue = () => {
-    if (!isReady || isNavigating || totalSelected <= 0) {
+    if (!showState || isNavigating || totalSelected <= 0) {
       return;
     }
 
@@ -110,7 +92,7 @@ export function TicketPurchaseSection({
     router.push(`/shows/${showId}/protection`);
   };
 
-  if (!isReady) {
+  if (!showState) {
     return <TicketPurchaseSkeleton />;
   }
 

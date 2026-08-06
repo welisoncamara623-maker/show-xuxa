@@ -118,7 +118,7 @@ export default async function ShowDetailsPage(props: ShowPageProps) {
             <p className="text-[0.98rem] font-semibold leading-7 tracking-[-0.02em] text-slate-600 sm:text-[1.1rem]">
               {show.aboutTitle}
             </p>
-            <p className="mx-auto mt-5 max-w-3xl text-[0.96rem] italic leading-7 tracking-[-0.015em] text-slate-500 sm:text-[1.02rem]">
+            <p className="mx-auto mt-5 max-w-3xl whitespace-pre-line text-[0.96rem] italic leading-7 tracking-[-0.015em] text-slate-500 sm:text-[1.02rem]">
               {show.aboutDescription}
             </p>
           </div>

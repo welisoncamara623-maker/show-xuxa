@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { TicketOption } from "@/data/shows";
@@ -28,18 +28,6 @@ type ProtectionPurchaseSectionProps = {
   tickets: TicketOption[];
 };
 
-function ProtectionPurchaseSkeleton() {
-  return (
-    <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 lg:px-0">
-      <div className="space-y-4" aria-hidden="true">
-        <div className="h-[184px] rounded-[24px] border border-slate-200 bg-slate-100/70 shadow-[0_10px_28px_rgba(15,23,42,0.04)] animate-pulse" />
-        <div className="h-[156px] rounded-[24px] border border-slate-200 bg-slate-100/70 shadow-[0_10px_28px_rgba(15,23,42,0.04)] animate-pulse" />
-        <div className="h-[176px] rounded-[24px] border border-slate-200 bg-slate-100/70 shadow-[0_10px_28px_rgba(15,23,42,0.04)] animate-pulse" />
-      </div>
-    </div>
-  );
-}
-
 export function ProtectionPurchaseSection({
   showId,
   showName,
@@ -47,7 +35,6 @@ export function ProtectionPurchaseSection({
 }: ProtectionPurchaseSectionProps) {
   const router = useRouter();
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
-  const [hasHydrated, setHasHydrated] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -60,20 +47,6 @@ export function ProtectionPurchaseSection({
     (state) => state.setSelectedProtection
   );
   const prepareCheckout = useTicketStore((state) => state.prepareCheckout);
-
-  useEffect(() => {
-    let isActive = true;
-
-    void Promise.resolve(useTicketStore.persist.rehydrate()).then(() => {
-      if (isActive) {
-        setHasHydrated(true);
-      }
-    });
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
 
   const selectedQuantities = showState?.selectedQuantities ?? {};
   const selectedProtection = showState?.selectedProtection ?? "ticket-only";
@@ -96,7 +69,7 @@ export function ProtectionPurchaseSection({
   const draftEmail = checkoutEmail || undefined;
 
   const handleProtectionChange = (value: ProtectionOption) => {
-    if (!hasHydrated || isSubmitting) {
+    if (isSubmitting) {
       return;
     }
 
@@ -105,7 +78,7 @@ export function ProtectionPurchaseSection({
   };
 
   const handleOpenEmailModal = () => {
-    if (!hasHydrated || isSubmitting || !hasSelection) {
+    if (isSubmitting || !hasSelection) {
       return;
     }
 
@@ -152,10 +125,6 @@ export function ProtectionPurchaseSection({
     setIsSubmitting(false);
     return false;
   };
-
-  if (!hasHydrated) {
-    return <ProtectionPurchaseSkeleton />;
-  }
 
   if (!hasSelection) {
     return (

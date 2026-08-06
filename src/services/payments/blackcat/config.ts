@@ -34,7 +34,7 @@ function getApiUrl(): string {
     throw new Error("BLACKCAT_API_URL deve utilizar HTTPS.");
   }
 
-  return url.toString().replace(/\/$/, "");
+  return `${url.toString().replace(/\/+$/, "")}/`;
 }
 
 export function getBlackCatConfig(): BlackCatConfig {

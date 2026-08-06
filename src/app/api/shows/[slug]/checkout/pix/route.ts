@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -11,7 +11,13 @@ import {
 } from "@/lib/ticket-calculations";
 import { getSelectedTicketLines } from "@/lib/checkout-calculations";
 import { createBlackCatPixPayment } from "@/services/payments/blackcat/create-pix-payment";
+import { BlackCatResponseValidationError } from "@/services/payments/blackcat/errors";
 import { getBlackCatPixPaymentStatus } from "@/services/payments/blackcat/get-payment";
+import {
+  findReusablePendingPixPayment,
+  storePendingPixPayment,
+} from "@/services/payments/blackcat/pending-payments";
+import type { PixPayment } from "@/services/payments/blackcat/types";
 
 const checkoutPixRequestSchema = z.object({
   customerEmail: z.string().email(),
@@ -24,6 +30,60 @@ type CheckoutPixRouteContext = {
     slug: string;
   }>;
 };
+
+type CreatePixCheckoutResponse = {
+  orderId: string;
+  paymentId: string;
+  transactionId: string;
+  status: "pending";
+  amountInCents: number;
+  copyPasteCode: string;
+  qrCodeImage: string;
+  expiresAt: string;
+};
+
+function normalizeSelectedQuantities(
+  selectedQuantities: Record<string, number>
+) {
+  return Object.entries(selectedQuantities)
+    .filter(([, quantity]) => quantity > 0)
+    .sort(([leftTicketId], [rightTicketId]) =>
+      leftTicketId.localeCompare(rightTicketId)
+    );
+}
+
+function buildCheckoutKey(
+  showId: string,
+  customerEmail: string,
+  selectedProtection: string,
+  selectedQuantities: Record<string, number>
+) {
+  const signature = JSON.stringify({
+    showId,
+    customerEmail: customerEmail.trim().toLowerCase(),
+    selectedProtection,
+    selectedQuantities: normalizeSelectedQuantities(selectedQuantities),
+  });
+
+  return createHash("sha256").update(signature).digest("hex");
+}
+
+function buildCreatePixCheckoutResponse(
+  orderId: string,
+  payment: PixPayment
+): CreatePixCheckoutResponse {
+  return {
+    orderId,
+    paymentId: payment.providerPaymentId,
+    transactionId: payment.transactionId,
+    status: "pending",
+    amountInCents: payment.amountInCents,
+    copyPasteCode: payment.copyPasteCode,
+    qrCodeImage: payment.qrCodeImage ?? payment.qrCodeBase64 ?? "",
+    expiresAt:
+      payment.expiresAt ?? new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+  };
+}
 
 function buildStatusUrl(request: Request, slug: string, transactionId: string) {
   const url = new URL(request.url);
@@ -82,6 +142,43 @@ export async function POST(request: Request, context: CheckoutPixRouteContext) {
     parsedBody.data.selectedProtection
   );
 
+  const checkoutKey = buildCheckoutKey(
+    slug,
+    parsedBody.data.customerEmail,
+    parsedBody.data.selectedProtection,
+    parsedBody.data.selectedQuantities
+  );
+  const existingPayment = findReusablePendingPixPayment(checkoutKey);
+
+  if (existingPayment) {
+    return NextResponse.json(
+      {
+        success: true,
+        data: {
+          ...buildCreatePixCheckoutResponse(
+            existingPayment.orderId,
+            existingPayment.payment
+          ),
+          payment: existingPayment.payment,
+          ticketSubtotalInCents,
+          insuranceAmountInCents,
+          finalTotalInCents,
+          statusUrl: buildStatusUrl(
+            request,
+            slug,
+            existingPayment.payment.providerPaymentId
+          ),
+        },
+      },
+      {
+        status: 201,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
+    );
+  }
+
   const orderId = randomUUID();
   const webhookUrl = buildWebhookUrl(request);
   const payment = await createBlackCatPixPayment({
@@ -110,14 +207,22 @@ export async function POST(request: Request, context: CheckoutPixRouteContext) {
         : []),
     ],
     postbackUrl: webhookUrl,
-    expiresInDays: 2,
+  });
+
+  const responseData = buildCreatePixCheckoutResponse(orderId, payment);
+
+  storePendingPixPayment({
+    checkoutKey,
+    orderId,
+    payment,
+    createdAt: new Date().toISOString(),
   });
 
   return NextResponse.json(
     {
       success: true,
       data: {
-        orderId,
+        ...responseData,
         payment,
         ticketSubtotalInCents,
         insuranceAmountInCents,
@@ -155,17 +260,36 @@ export async function GET(request: Request, context: CheckoutPixRouteContext) {
     );
   }
 
-  const payment = await getBlackCatPixPaymentStatus(transactionId);
+  try {
+    const payment = await getBlackCatPixPaymentStatus(transactionId);
 
-  return NextResponse.json(
-    {
-      success: true,
-      data: payment,
-    },
-    {
-      headers: {
-        "Cache-Control": "no-store",
+    return NextResponse.json(
+      {
+        success: true,
+        data: payment,
       },
-    }
-  );
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
+    );
+  } catch (error) {
+    const isValidationError = error instanceof BlackCatResponseValidationError;
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: isValidationError
+          ? "BLACKCAT_STATUS_RESPONSE_INVALID"
+          : "BLACKCAT_STATUS_UNAVAILABLE",
+      },
+      {
+        status: 502,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
+    );
+  }
 }

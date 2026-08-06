@@ -7,6 +7,12 @@ type BlackCatFetchInit = Omit<RequestInit, "body"> & {
   body?: string;
 };
 
+function buildBlackCatUrl(baseUrl: string, endpointPath: string): URL {
+  const normalizedPath = endpointPath.replace(/^\/+/, "");
+
+  return new URL(normalizedPath, baseUrl);
+}
+
 function buildHeaders(headers?: HeadersInit) {
   const { privateKey } = getBlackCatConfig();
   const nextHeaders = new Headers(headers);
@@ -16,20 +22,25 @@ function buildHeaders(headers?: HeadersInit) {
 }
 
 export async function blackCatFetchJson<T>(
-  path: string,
+  endpointPath: string,
   init: BlackCatFetchInit
 ): Promise<T> {
   const { apiUrl } = getBlackCatConfig();
-  const url = new URL(path, `${apiUrl}/`);
+  const requestUrl = buildBlackCatUrl(apiUrl, endpointPath);
   const timeoutSignal =
     typeof AbortSignal.timeout === "function"
       ? AbortSignal.timeout(15_000)
       : undefined;
 
+  console.info("[blackcat] request", {
+    method: init.method ?? "GET",
+    url: requestUrl.toString(),
+  });
+
   let response: Response;
 
   try {
-    response = await fetch(url, {
+    response = await fetch(requestUrl, {
       ...init,
       cache: "no-store",
       headers: buildHeaders(init.headers),
@@ -59,3 +70,4 @@ export async function blackCatFetchJson<T>(
 
   return JSON.parse(responseText) as T;
 }
+''

@@ -45,22 +45,26 @@ export type PixPaymentStatus =
 export type PixPayment = {
   provider: "blackcat";
   providerPaymentId: string;
+  transactionId: string;
   status: PixPaymentStatus;
   amountInCents: number;
   copyPasteCode: string;
-  qrCodeImageUrl?: string;
+  qrCodeImage?: string;
   qrCodeBase64?: string;
   expiresAt?: string;
+  paidAt?: string | null;
+  endToEndId?: string | null;
 };
 
 export type PixPaymentStatusResponse = {
   provider: "blackcat";
   providerPaymentId: string;
+  transactionId: string;
   status: PixPaymentStatus;
   amountInCents: number;
   expiresAt?: string;
-  paidAt?: string;
-  endToEndId?: string;
+  paidAt?: string | null;
+  endToEndId?: string | null;
 };
 
 export type BlackCatCreateSaleRequest = {
@@ -102,6 +106,17 @@ export type BlackCatCreateSaleResponse = {
   };
 };
 
+export type BlackCatCreateSaleErrorResponse = {
+  success: false;
+  message: string;
+  error?: string;
+  code?: string;
+};
+
+export type BlackCatCreateSaleApiResponse =
+  | BlackCatCreateSaleResponse
+  | BlackCatCreateSaleErrorResponse;
+
 export type BlackCatTransactionStatusResponse = {
   success: true;
   data: {
@@ -111,7 +126,7 @@ export type BlackCatTransactionStatusResponse = {
     amount: number;
     netAmount: number;
     fees: number;
-    paidAt?: string;
-    endToEndId?: string;
+    paidAt?: string | null;
+    endToEndId?: string | null;
   };
 };
