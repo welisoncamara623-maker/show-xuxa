@@ -15,7 +15,7 @@ export const runtime = "nodejs";
 const confirmCheckoutRequestSchema = z.object({
   orderId: z.string().min(1),
   transactionId: z.string().min(1),
-  customerEmail: z.string().email(),
+  customerEmail: z.string().email().optional(),
   selectedProtection: z.enum(["ticket-only", "ticket-with-insurance"]),
   selectedQuantities: z.record(z.string(), z.number().int().nonnegative()),
 });
@@ -47,7 +47,28 @@ export async function POST(request: Request, context: CheckoutConfirmRouteContex
     );
   }
 
+  const normalizedEmail = parsedBody.data.customerEmail?.trim().toLowerCase();
+  const selectedLines = getSelectedTicketLines(
+    show.tickets,
+    parsedBody.data.selectedQuantities
+  );
+
+  console.info("[checkout-confirm] started", {
+    slug,
+    orderId: parsedBody.data.orderId,
+    hasTransactionId: Boolean(parsedBody.data.transactionId),
+    hasCustomerEmail: Boolean(normalizedEmail),
+    itemCount: selectedLines.length,
+  });
+
   const payment = await getBlackCatPixPaymentStatus(parsedBody.data.transactionId);
+
+  console.info("[checkout-confirm] payment-status", {
+    orderId: parsedBody.data.orderId,
+    transactionId: parsedBody.data.transactionId,
+    status: payment.status,
+    paidAt: payment.paidAt ?? null,
+  });
 
   if (payment.status !== "paid") {
     return NextResponse.json(
@@ -59,11 +80,6 @@ export async function POST(request: Request, context: CheckoutConfirmRouteContex
       { status: 409 }
     );
   }
-
-  const selectedLines = getSelectedTicketLines(
-    show.tickets,
-    parsedBody.data.selectedQuantities
-  );
 
   if (selectedLines.length <= 0) {
     return NextResponse.json(
@@ -100,35 +116,64 @@ export async function POST(request: Request, context: CheckoutConfirmRouteContex
   let emailResult: SendPurchaseConfirmationResult = {
     success: false as const,
     reason: "RESEND_ERROR" as const,
+    error: "customer-email-missing",
   };
 
-  try {
-    emailResult = await sendPurchaseConfirmationEmail({
+  console.info("[checkout-confirm] sending-email", {
+    orderId: parsedBody.data.orderId,
+    hasCustomerEmail: Boolean(normalizedEmail),
+    itemCount: selectedLines.length,
+    protection: parsedBody.data.selectedProtection,
+    finalTotalInCents,
+  });
+
+  if (!normalizedEmail) {
+    console.error("[checkout-confirm] customer-email-missing", {
       orderId: parsedBody.data.orderId,
-      customerEmail: parsedBody.data.customerEmail,
-      eventName: show.eventName,
-      city: show.city,
-      venue: show.stadium,
-      eventDate: `${show.card.date} ${show.card.month} ${show.card.year}`,
-      eventTime: `${show.card.weekDay} ${show.card.hour}`,
-      items: selectedLines.map((line) => ({
-        sector: line.sector,
-        category: line.category,
-        quantity: line.quantity,
-        unitPriceInCents: line.unitPriceInCents,
-        lineTotalInCents: line.lineTotalInCents,
-      })),
-      protectionLabel:
-        parsedBody.data.selectedProtection === "ticket-with-insurance"
-          ? "Seguro Ingresso Protegido"
-          : "Somente ingressos",
-      insuranceInCents,
-      finalTotalInCents,
     });
-  } catch (error) {
-    console.warn("[checkout-confirm] email confirmation failed", {
+  } else {
+    try {
+      emailResult = await sendPurchaseConfirmationEmail({
+        orderId: parsedBody.data.orderId,
+        customerEmail: normalizedEmail,
+        eventName: show.eventName,
+        city: show.city,
+        venue: show.stadium,
+        eventDate: `${show.card.date} ${show.card.month} ${show.card.year}`,
+        eventTime: `${show.card.weekDay} ${show.card.hour}`,
+        items: selectedLines.map((line) => ({
+          sector: line.sector,
+          category: line.category,
+          quantity: line.quantity,
+          unitPriceInCents: line.unitPriceInCents,
+          lineTotalInCents: line.lineTotalInCents,
+        })),
+        protectionLabel:
+          parsedBody.data.selectedProtection === "ticket-with-insurance"
+            ? "Seguro Ingresso Protegido"
+            : "Somente ingressos",
+        insuranceInCents,
+        finalTotalInCents,
+      });
+    } catch (error) {
+      emailResult = {
+        success: false,
+        reason: "RESEND_ERROR",
+        error: error instanceof Error ? error.message : "unknown_error",
+      };
+    }
+  }
+
+  console.info("[checkout-confirm] email-result", {
+    orderId: parsedBody.data.orderId,
+    success: emailResult.success,
+    emailId: emailResult.success ? emailResult.emailId : undefined,
+  });
+
+  if (!emailResult.success) {
+    console.error("[checkout-confirm] email-failed", {
       orderId: parsedBody.data.orderId,
-      reason: error instanceof Error ? error.message : "unknown_error",
+      reason: emailResult.error ?? emailResult.reason,
     });
   }
 
@@ -141,7 +186,7 @@ export async function POST(request: Request, context: CheckoutConfirmRouteContex
       order: {
         id: parsedBody.data.orderId,
         showId: show.id,
-        customerEmail: parsedBody.data.customerEmail,
+        customerEmail: normalizedEmail ?? "",
         items: selectedLines.map((line) => ({
           ticketId: line.ticketId,
           sector: line.sector,

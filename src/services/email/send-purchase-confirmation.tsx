@@ -33,21 +33,29 @@ export type SendPurchaseConfirmationResult =
   | {
       success: false;
       reason: "RESEND_ERROR";
+      error?: string;
     };
 
 function getResendErrorDetails(error: unknown) {
   if (!error || typeof error !== "object") {
     return {
+      name: "UnknownError",
       message: "unknown_error",
       code: undefined as string | undefined,
     };
   }
 
   const record = error as {
+    name?: unknown;
     message?: unknown;
     code?: unknown;
     statusCode?: unknown;
   };
+
+  const name =
+    typeof record.name === "string" && record.name.trim()
+      ? record.name.trim()
+      : "UnknownError";
 
   const message =
     typeof record.message === "string" && record.message.trim()
@@ -64,6 +72,7 @@ function getResendErrorDetails(error: unknown) {
           : undefined;
 
   return {
+    name,
     message,
     code,
   };
@@ -75,6 +84,15 @@ export async function sendPurchaseConfirmationEmail(
   try {
     const resend = getResendClient();
     const { fromEmail } = getResendConfig();
+    const idempotencyKey = `purchase-confirmation/${input.orderId}`;
+
+    console.info("[resend] send-started", {
+      orderId: input.orderId,
+      hasRecipient: Boolean(input.customerEmail?.trim()),
+      itemCount: input.items.length,
+      idempotencyKey,
+    });
+
     const html = await renderPurchaseConfirmationEmailHtml(input);
 
     const { data, error } = await resend.emails.send(
@@ -85,23 +103,29 @@ export async function sendPurchaseConfirmationEmail(
         html,
       },
       {
-        idempotencyKey: `purchase-confirmation/${input.orderId}`,
+        idempotencyKey,
       }
     );
 
     if (error || !data?.id) {
       const errorDetails = getResendErrorDetails(error);
 
-      console.warn("[resend] purchase confirmation email failed", {
+      console.error("[resend] send-rejected", {
         orderId: input.orderId,
+        name: errorDetails.name,
         message: errorDetails.message,
-        code: errorDetails.code ?? "missing_email_id",
       });
       return {
         success: false,
         reason: "RESEND_ERROR",
+        error: errorDetails.message,
       };
     }
+
+    console.info("[resend] send-accepted", {
+      orderId: input.orderId,
+      emailId: data.id,
+    });
 
     return {
       success: true,
@@ -110,14 +134,15 @@ export async function sendPurchaseConfirmationEmail(
   } catch (error) {
     const errorDetails = getResendErrorDetails(error);
 
-    console.warn("[resend] purchase confirmation email exception", {
+    console.error("[resend] send-rejected", {
       orderId: input.orderId,
+      name: errorDetails.name,
       message: errorDetails.message,
-      code: errorDetails.code ?? "unknown_error",
     });
     return {
       success: false,
       reason: "RESEND_ERROR",
+      error: errorDetails.message,
     };
   }
 }
