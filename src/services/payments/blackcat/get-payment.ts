@@ -13,7 +13,7 @@ function mapStatus(
   }
 
   if (status === "CANCELLED") {
-    return "expired";
+    return "cancelled";
   }
 
   if (status === "REFUNDED") {

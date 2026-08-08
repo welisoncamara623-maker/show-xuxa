@@ -18,3 +18,7 @@ export function formatCurrencyBRL(value: number) {
 export function formatIntegerBRL(value: number) {
   return new Intl.NumberFormat("pt-BR").format(value);
 }
+
+export function formatCurrencyFromCents(valueInCents: number): string {
+  return currencyFormatter.format(valueInCents / 100);
+}

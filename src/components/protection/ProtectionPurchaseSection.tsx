@@ -41,7 +41,7 @@ export function ProtectionPurchaseSection({
 
   const showState = useTicketStore((state) => state.shows[showId]);
   const checkoutEmail = useTicketStore(
-    (state) => state.checkoutDrafts[showId]?.customerEmail ?? ""
+    (state) => state.shows[showId]?.customerEmail ?? ""
   );
   const setSelectedProtection = useTicketStore(
     (state) => state.setSelectedProtection

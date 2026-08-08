@@ -13,7 +13,6 @@ import { TicketSectorGroup } from "./TicketSectorGroup";
 
 type TicketPurchaseSectionProps = {
   showId: string;
-  initialStock: number;
   tickets: TicketOption[];
 };
 
@@ -38,7 +37,6 @@ function TicketPurchaseSkeleton() {
 
 export function TicketPurchaseSection({
   showId,
-  initialStock,
   tickets,
 }: TicketPurchaseSectionProps) {
   const router = useRouter();
@@ -50,13 +48,12 @@ export function TicketPurchaseSection({
   const decrementQuantity = useTicketStore((state) => state.decrementQuantity);
 
   useEffect(() => {
-    initializeShow(showId, initialStock);
-  }, [initializeShow, initialStock, showId]);
+    initializeShow(showId, 5000);
+  }, [initializeShow, showId]);
 
   const selectedQuantities = showState?.selectedQuantities ?? {};
-  const stock = showState?.stock ?? 0;
   const totalSelected = sumSelectedQuantities(selectedQuantities);
-  const remainingStock = Math.max(stock - totalSelected, 0);
+  const remainingStock = Math.max((showState?.stock ?? 5000) - totalSelected, 0);
 
   const ticketsBySector = useMemo(
     () =>

@@ -30,7 +30,6 @@ export type ShowData = {
   fanReportHref: string;
   address: string;
   googleMapsHref: string;
-  initialStock: number;
   tickets: TicketOption[];
   ratings: ShowRating[];
 };
@@ -39,8 +38,6 @@ const eventName = "XUXA - O ÚLTIMO VOO DA NAVE";
 export const aboutTitle = "Xuxa Tour 2026 – Um Show Mágico para os Baixinhos";
 export const aboutDescription =
   "Prepare-se para viver um momento inesquecível! A Xuxa Tour 2026 chegou para encantar toda a família com um espetáculo lúdico e cheio de alegria, especialmente pensado para o público infantil.\n\nEm um cenário colorido e interativo, a eterna Rainha dos Baixinhos apresenta um show repleto de músicas que marcaram gerações, coreografias animadas e uma mensagem positiva de amizade e respeito.\n\nÉ a oportunidade perfeita para os pequenos (e também para os adultos que ainda guardam a criança no coração) cantarem juntos, reviverem grandes sucessos e criarem memórias afetivas que durarão para sempre.";
-
-const initialStock = 1000;
 
 function createTickets() {
   return DEFAULT_TICKET_OPTIONS.map((ticket) => ({ ...ticket }));
@@ -76,7 +73,6 @@ export const shows: ShowData[] = [
     googleMapsHref: createGoogleMapsHref(
       "Rua Buenos Aires, 1260 - Água Verde, Curitiba - PR, 80250-070"
     ),
-    initialStock,
     tickets: createTickets(),
     ratings: [
       { label: "Atmosfera", rating: 5, maxRating: 5 },
@@ -110,7 +106,6 @@ export const shows: ShowData[] = [
     googleMapsHref: createGoogleMapsHref(
       "Rua Cristina Maria de Assis, 202 - Califórnia, Belo Horizonte - MG, 30535-370"
     ),
-    initialStock,
     tickets: createTickets(),
     ratings: [
       { label: "Atmosfera", rating: 5, maxRating: 5 },
@@ -143,7 +138,6 @@ export const shows: ShowData[] = [
     googleMapsHref: createGoogleMapsHref(
       "Av. Pres. Castelo Branco, s/n, 20271-130 Rio de Janeiro"
     ),
-    initialStock,
     tickets: createTickets(),
     ratings: [
       { label: "Atmosfera", rating: 5, maxRating: 5 },

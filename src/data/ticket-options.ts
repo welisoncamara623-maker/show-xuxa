@@ -11,7 +11,7 @@ export const DEFAULT_TICKET_OPTIONS = [
     id: "upper-seat-half",
     sector: "CADEIRA SUPERIOR",
     category: "MEIA",
-    priceInCents: 9750,
+    priceInCents: 100,
     description:
       "Obrigatória a apresentação de documento que comprove o direito à meia-entrada.",
   },

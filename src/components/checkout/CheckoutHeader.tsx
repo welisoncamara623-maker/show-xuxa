@@ -5,14 +5,9 @@ import { PageBackButton } from "@/components/navigation/PageBackButton";
 type CheckoutHeaderProps = {
   backHref: string;
   city: string;
-  eventName: string;
 };
 
-export function CheckoutHeader({
-  backHref,
-  city,
-  eventName,
-}: CheckoutHeaderProps) {
+export function CheckoutHeader({ backHref, city }: CheckoutHeaderProps) {
   return (
     <header className="space-y-5 text-left">
       <div className="flex flex-col items-start gap-4">
@@ -31,9 +26,6 @@ export function CheckoutHeader({
             <h1 className="text-[1.55rem] font-semibold tracking-[-0.05em] text-slate-950 sm:text-[2rem]">
               Finalize sua compra
             </h1>
-            <p className="text-[0.95rem] font-medium tracking-[-0.02em] text-slate-500">
-              {eventName}
-            </p>
           </div>
         </div>
       </div>

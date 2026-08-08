@@ -1,25 +1,18 @@
-import { createHash, randomUUID } from "crypto";
-
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getShowById } from "@/data/shows";
-import {
-  calculateFinalTotal,
-  calculateInsuranceAmount,
-  calculateTicketSubtotal,
-} from "@/lib/ticket-calculations";
+import { calculateInsuranceAmount, calculateTicketSubtotal } from "@/lib/ticket-calculations";
 import { getSelectedTicketLines } from "@/lib/checkout-calculations";
 import { createBlackCatPixPayment } from "@/services/payments/blackcat/create-pix-payment";
 import { BlackCatResponseValidationError } from "@/services/payments/blackcat/errors";
 import { getBlackCatPixPaymentStatus } from "@/services/payments/blackcat/get-payment";
-import {
-  findReusablePendingPixPayment,
-  storePendingPixPayment,
-} from "@/services/payments/blackcat/pending-payments";
 import type { PixPayment } from "@/services/payments/blackcat/types";
 
+export const runtime = "nodejs";
+
 const checkoutPixRequestSchema = z.object({
+  orderId: z.string().min(1),
   customerEmail: z.string().email(),
   selectedProtection: z.enum(["ticket-only", "ticket-with-insurance"]),
   selectedQuantities: z.record(z.string(), z.number().int().nonnegative()),
@@ -41,32 +34,6 @@ type CreatePixCheckoutResponse = {
   qrCodeImage: string;
   expiresAt: string;
 };
-
-function normalizeSelectedQuantities(
-  selectedQuantities: Record<string, number>
-) {
-  return Object.entries(selectedQuantities)
-    .filter(([, quantity]) => quantity > 0)
-    .sort(([leftTicketId], [rightTicketId]) =>
-      leftTicketId.localeCompare(rightTicketId)
-    );
-}
-
-function buildCheckoutKey(
-  showId: string,
-  customerEmail: string,
-  selectedProtection: string,
-  selectedQuantities: Record<string, number>
-) {
-  const signature = JSON.stringify({
-    showId,
-    customerEmail: customerEmail.trim().toLowerCase(),
-    selectedProtection,
-    selectedQuantities: normalizeSelectedQuantities(selectedQuantities),
-  });
-
-  return createHash("sha256").update(signature).digest("hex");
-}
 
 function buildCreatePixCheckoutResponse(
   orderId: string,
@@ -137,37 +104,55 @@ export async function POST(request: Request, context: CheckoutPixRouteContext) {
     parsedBody.data.selectedProtection === "ticket-with-insurance"
       ? calculateInsuranceAmount(ticketSubtotalInCents)
       : 0;
-  const finalTotalInCents = calculateFinalTotal(
-    ticketSubtotalInCents,
-    parsedBody.data.selectedProtection
-  );
+  const finalTotalInCents = ticketSubtotalInCents + insuranceAmountInCents;
 
-  const checkoutKey = buildCheckoutKey(
-    slug,
-    parsedBody.data.customerEmail,
-    parsedBody.data.selectedProtection,
-    parsedBody.data.selectedQuantities
-  );
-  const existingPayment = findReusablePendingPixPayment(checkoutKey);
+  const webhookUrl = buildWebhookUrl(request);
 
-  if (existingPayment) {
+  try {
+    const payment = await createBlackCatPixPayment({
+      orderId: parsedBody.data.orderId,
+      customer: {
+        email: parsedBody.data.customerEmail.trim().toLowerCase(),
+      },
+      amountInCents: finalTotalInCents,
+      description: `${show.eventName} - ${show.city}`,
+      items: [
+        ...selectedLines.map((line) => ({
+          title: `${line.sector} - ${line.category}`,
+          unitPriceInCents: line.unitPriceInCents,
+          quantity: line.quantity,
+          tangible: false,
+        })),
+        ...(insuranceAmountInCents > 0
+          ? [
+              {
+                title: "Seguro Ingresso Protegido",
+                unitPriceInCents: insuranceAmountInCents,
+                quantity: 1,
+                tangible: false,
+              },
+            ]
+          : []),
+      ],
+      postbackUrl: webhookUrl,
+    });
+
+    const responseData = buildCreatePixCheckoutResponse(
+      parsedBody.data.orderId,
+      payment
+    );
+
     return NextResponse.json(
       {
         success: true,
         data: {
-          ...buildCreatePixCheckoutResponse(
-            existingPayment.orderId,
-            existingPayment.payment
-          ),
-          payment: existingPayment.payment,
+          ...responseData,
+          payment,
+          orderId: parsedBody.data.orderId,
           ticketSubtotalInCents,
           insuranceAmountInCents,
           finalTotalInCents,
-          statusUrl: buildStatusUrl(
-            request,
-            slug,
-            existingPayment.payment.providerPaymentId
-          ),
+          statusUrl: buildStatusUrl(request, slug, payment.providerPaymentId),
         },
       },
       {
@@ -177,66 +162,22 @@ export async function POST(request: Request, context: CheckoutPixRouteContext) {
         },
       }
     );
+  } catch (error) {
+    console.error("[checkout] failed to create pix payment", {
+      slug,
+      error,
+    });
+
+    return NextResponse.json(
+      { success: false, error: "BLACKCAT_CREATE_FAILED" },
+      {
+        status: 502,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
+    );
   }
-
-  const orderId = randomUUID();
-  const webhookUrl = buildWebhookUrl(request);
-  const payment = await createBlackCatPixPayment({
-    orderId,
-    customer: {
-      email: parsedBody.data.customerEmail.trim().toLowerCase(),
-    },
-    amountInCents: finalTotalInCents,
-    description: `${show.eventName} - ${show.city}`,
-    items: [
-      ...selectedLines.map((line) => ({
-        title: `${line.sector} - ${line.category}`,
-        unitPriceInCents: line.unitPriceInCents,
-        quantity: line.quantity,
-        tangible: false,
-      })),
-      ...(insuranceAmountInCents > 0
-        ? [
-            {
-              title: "Seguro Ingresso Protegido",
-              unitPriceInCents: insuranceAmountInCents,
-              quantity: 1,
-              tangible: false,
-            },
-          ]
-        : []),
-    ],
-    postbackUrl: webhookUrl,
-  });
-
-  const responseData = buildCreatePixCheckoutResponse(orderId, payment);
-
-  storePendingPixPayment({
-    checkoutKey,
-    orderId,
-    payment,
-    createdAt: new Date().toISOString(),
-  });
-
-  return NextResponse.json(
-    {
-      success: true,
-      data: {
-        ...responseData,
-        payment,
-        ticketSubtotalInCents,
-        insuranceAmountInCents,
-        finalTotalInCents,
-        statusUrl: buildStatusUrl(request, slug, payment.providerPaymentId),
-      },
-    },
-    {
-      status: 201,
-      headers: {
-        "Cache-Control": "no-store",
-      },
-    }
-  );
 }
 
 export async function GET(request: Request, context: CheckoutPixRouteContext) {

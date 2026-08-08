@@ -44,7 +44,6 @@ export default async function SuccessPage(props: SuccessPageProps) {
         showId={show.id}
         showName={show.eventName}
         backHref={`/shows/${show.id}`}
-        tickets={show.tickets}
       />
     </main>
   );

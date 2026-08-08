@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+export const runtime = "nodejs";
+
 const webhookHeadersSchema = z.object({
   event: z.string().min(1),
   source: z.literal("blackcat-api"),
@@ -37,6 +39,5 @@ export async function POST(request: Request) {
     );
   }
 
-  // A confirmação real será consultada no checkout pelo status da transação.
   return NextResponse.json({ success: true }, { status: 200 });
 }

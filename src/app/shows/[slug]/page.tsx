@@ -52,7 +52,6 @@ export default async function ShowDetailsPage(props: ShowPageProps) {
 
         <TicketPurchaseSection
           showId={show.id}
-          initialStock={show.initialStock}
           tickets={show.tickets}
         />
 

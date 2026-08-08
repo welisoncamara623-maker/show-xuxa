@@ -17,20 +17,24 @@ import { SectionTitle } from "@/components/SectionTitle";
 import type { TicketOption } from "@/data/shows";
 import { type ProtectionOption } from "@/lib/ticket-calculations";
 import { getSelectedTicketLines } from "@/lib/checkout-calculations";
+import { useTicketStore } from "@/store/ticket-store";
 import type {
   PixPayment,
   PixPaymentStatusResponse,
 } from "@/services/payments/blackcat/types";
 
-import { PixExpirationTimer } from "./PixExpirationTimer";
 
 type PixCheckoutSectionProps = {
   showId: string;
+  orderId: string;
   customerEmail: string;
   selectedProtection: ProtectionOption;
   selectedQuantities: Record<string, number>;
   tickets: TicketOption[];
-  onPaymentConfirmed: () => Promise<boolean> | boolean;
+  onPaymentConfirmed: (input: {
+    orderId: string;
+    transactionId: string;
+  }) => Promise<boolean> | boolean;
 };
 
 type PixCheckoutStatus =
@@ -67,25 +71,6 @@ type CreatePixCheckoutApiResponse = {
   error?: string;
 };
 
-type StoredPixCheckout = {
-  checkoutKey: string;
-  payment: PixPayment;
-};
-
-const PIX_STORAGE_PREFIX = "show-da-xuxa:pix-checkout";
-
-function parseValidDate(
-  value: string | number | Date | null | undefined
-): Date | null {
-  if (value === null || value === undefined || value === "") {
-    return null;
-  }
-
-  const date = value instanceof Date ? value : new Date(value);
-
-  return Number.isFinite(date.getTime()) ? date : null;
-}
-
 function mapPaymentStatusLabel(status: PixCheckoutStatus) {
   if (status === "paid") {
     return "Pagamento confirmado";
@@ -117,6 +102,10 @@ function mapPixStatusToCheckoutStatus(
     return "paid";
   }
 
+  if (status === "cancelled") {
+    return "cancelled";
+  }
+
   if (status === "expired") {
     return "expired";
   }
@@ -130,44 +119,6 @@ function mapPixStatusToCheckoutStatus(
   }
 
   return "pending";
-}
-
-function normalizeSelectedQuantities(
-  selectedQuantities: Record<string, number>
-) {
-  return Object.entries(selectedQuantities)
-    .filter(([, quantity]) => quantity > 0)
-    .sort(([leftTicketId], [rightTicketId]) =>
-      leftTicketId.localeCompare(rightTicketId)
-    );
-}
-
-function buildCheckoutKey(
-  showId: string,
-  customerEmail: string,
-  selectedProtection: ProtectionOption,
-  selectedQuantities: Record<string, number>
-) {
-  return JSON.stringify({
-    showId,
-    customerEmail: customerEmail.trim().toLowerCase(),
-    selectedProtection,
-    selectedQuantities: normalizeSelectedQuantities(selectedQuantities),
-  });
-}
-
-function storageKey(checkoutKey: string) {
-  return `${PIX_STORAGE_PREFIX}:${btoa(checkoutKey)}`;
-}
-
-function isExpiredAt(expiresAt: string | undefined) {
-  const date = parseValidDate(expiresAt);
-
-  if (!date) {
-    return true;
-  }
-
-  return date.getTime() <= Date.now();
 }
 
 function buildPaymentFromResponse(
@@ -192,61 +143,9 @@ function buildPaymentFromResponse(
   };
 }
 
-function readStoredCheckout(checkoutKey: string) {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const rawValue = window.localStorage.getItem(storageKey(checkoutKey));
-
-  if (!rawValue) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(rawValue) as Partial<StoredPixCheckout>;
-
-    if (!parsed.checkoutKey || !parsed.payment) {
-      return null;
-    }
-
-    if (parsed.checkoutKey !== checkoutKey) {
-      return null;
-    }
-
-    return {
-      checkoutKey: parsed.checkoutKey,
-      payment: parsed.payment,
-    } satisfies StoredPixCheckout;
-  } catch {
-    return null;
-  }
-}
-
-function saveStoredCheckout(checkoutKey: string, payment: PixPayment) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(
-    storageKey(checkoutKey),
-    JSON.stringify({
-      checkoutKey,
-      payment,
-    } satisfies StoredPixCheckout)
-  );
-}
-
-function clearStoredCheckout(checkoutKey: string) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.removeItem(storageKey(checkoutKey));
-}
-
 export function PixCheckoutSection({
   showId,
+  orderId,
   customerEmail,
   selectedProtection,
   selectedQuantities,
@@ -256,7 +155,6 @@ export function PixCheckoutSection({
   const [payment, setPayment] = useState<PixPayment | null>(null);
   const [checkoutStatus, setCheckoutStatus] =
     useState<PixCheckoutStatus>("creating");
-  const [isHydrated, setIsHydrated] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -266,23 +164,17 @@ export function PixCheckoutSection({
   const createRequestRef = useRef<AbortController | null>(null);
   const pollRequestRef = useRef<AbortController | null>(null);
   const currentTransactionIdRef = useRef<string | null>(null);
+  const currentOrderIdRef = useRef<string | null>(null);
   const hasRequestedPixRef = useRef(false);
   const hasConfirmedPaymentRef = useRef(false);
+  const activePayment = useTicketStore(
+    (state) => state.shows[showId]?.activePayment ?? null
+  );
+  const setActivePayment = useTicketStore((state) => state.setActivePayment);
 
   const selectedLines = useMemo(
     () => getSelectedTicketLines(tickets, selectedQuantities),
     [selectedQuantities, tickets]
-  );
-
-  const checkoutKey = useMemo(
-    () =>
-      buildCheckoutKey(
-        showId,
-        customerEmail,
-        selectedProtection,
-        selectedQuantities
-      ),
-    [customerEmail, selectedProtection, selectedQuantities, showId]
   );
 
   const statusLabel = mapPaymentStatusLabel(checkoutStatus);
@@ -298,59 +190,49 @@ export function PixCheckoutSection({
   }, [onPaymentConfirmed]);
 
   useEffect(() => {
-    setPayment(null);
-    setCheckoutStatus("creating");
+    const persistedPayment =
+      activePayment && activePayment.orderId === orderId
+        ? activePayment
+        : null;
+
+    createRequestRef.current?.abort();
+    pollRequestRef.current?.abort();
+
     setErrorMessage(null);
     setAnnouncement(null);
     setCopied(false);
     setIsCreating(false);
     setIsPolling(false);
+
+    if (persistedPayment) {
+      setPayment(persistedPayment);
+      setCheckoutStatus(mapPixStatusToCheckoutStatus(persistedPayment.status));
+      currentTransactionIdRef.current =
+        persistedPayment.transactionId ?? persistedPayment.providerPaymentId;
+      currentOrderIdRef.current = persistedPayment.orderId;
+      hasRequestedPixRef.current = true;
+      hasConfirmedPaymentRef.current = persistedPayment.status === "paid";
+      return;
+    }
+
+    setPayment(null);
+    setCheckoutStatus("creating");
     currentTransactionIdRef.current = null;
+    currentOrderIdRef.current = orderId || null;
     hasRequestedPixRef.current = false;
     hasConfirmedPaymentRef.current = false;
-
-    createRequestRef.current?.abort();
-    pollRequestRef.current?.abort();
-  }, [checkoutKey]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const storedCheckout = readStoredCheckout(checkoutKey);
-
-    if (storedCheckout?.payment) {
-      const storedPayment = storedCheckout.payment;
-      const storedTransactionId =
-        storedPayment.transactionId ?? storedPayment.providerPaymentId;
-      const storedExpired = isExpiredAt(storedPayment.expiresAt);
-
-      if (!storedExpired) {
-        setPayment(storedPayment);
-        setCheckoutStatus(mapPixStatusToCheckoutStatus(storedPayment.status));
-        currentTransactionIdRef.current = storedTransactionId;
-        hasRequestedPixRef.current = true;
-        setAnnouncement("Pix gerado.");
-      } else {
-        setPayment({
-          ...storedPayment,
-          status: "expired",
-        });
-        setCheckoutStatus("expired");
-        currentTransactionIdRef.current = storedTransactionId;
-        hasRequestedPixRef.current = true;
-      }
-    }
-
-    setIsHydrated(true);
-  }, [checkoutKey]);
+    setActivePayment(showId, null);
+  }, [
+    activePayment,
+    customerEmail,
+    orderId,
+    selectedProtection,
+    selectedQuantities,
+    setActivePayment,
+    showId,
+  ]);
 
   useEffect(() => {
-    if (!isHydrated) {
-      return;
-    }
-
     if (!selectedLines.length) {
       return;
     }
@@ -371,14 +253,21 @@ export function PixCheckoutSection({
       return;
     }
 
-    hasRequestedPixRef.current = true;
-    void createPixPayment("auto");
+    const createTimeoutId = window.setTimeout(() => {
+      if (hasRequestedPixRef.current) {
+        return;
+      }
+
+      hasRequestedPixRef.current = true;
+      void createPixPayment("auto");
+    }, 0);
 
     return () => {
+      window.clearTimeout(createTimeoutId);
       createRequestRef.current?.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checkoutKey, isHydrated, payment?.status, selectedLines.length]);
+  }, [payment?.status, selectedLines.length]);
 
   useEffect(() => {
     if (!payment || payment.status !== "pending") {
@@ -433,6 +322,32 @@ export function PixCheckoutSection({
           !payload.success ||
           !data
         ) {
+          if (!controller.signal.aborted && isActive) {
+            const errorCode = payload.error ?? "";
+
+            if (errorCode === "INSUFFICIENT_STOCK") {
+              setCheckoutStatus("error");
+              setErrorMessage(
+                "A quantidade selecionada não está mais disponível."
+              );
+              setAnnouncement(
+                "A quantidade selecionada não está mais disponível."
+              );
+            } else if (errorCode === "ORDER_CONFIRMATION_FAILED") {
+              setCheckoutStatus("error");
+              setErrorMessage(
+                "Não foi possível concluir a compra neste momento."
+              );
+              setAnnouncement(
+                "Não foi possível concluir a compra neste momento."
+              );
+            } else {
+              setCheckoutStatus("error");
+              setErrorMessage("Não foi possível consultar o status do Pix.");
+              setAnnouncement("Não foi possível consultar o status do Pix.");
+            }
+          }
+
           stopPolling();
           return;
         }
@@ -449,15 +364,15 @@ export function PixCheckoutSection({
         setPayment((current) =>
           current
             ? {
-                ...current,
-                transactionId: responseTransactionId,
-                providerPaymentId: responseTransactionId,
-                status: data.status,
-                amountInCents: data.amountInCents,
-                expiresAt: data.expiresAt ?? current.expiresAt,
-                paidAt: data.paidAt ?? current.paidAt,
-                endToEndId: data.endToEndId ?? current.endToEndId,
-              }
+              ...current,
+              transactionId: responseTransactionId,
+              providerPaymentId: responseTransactionId,
+              status: data.status,
+              amountInCents: data.amountInCents,
+              expiresAt: data.expiresAt ?? current.expiresAt,
+              paidAt: data.paidAt ?? current.paidAt,
+              endToEndId: data.endToEndId ?? current.endToEndId,
+            }
             : current
         );
 
@@ -467,19 +382,22 @@ export function PixCheckoutSection({
 
           if (!hasConfirmedPaymentRef.current) {
             hasConfirmedPaymentRef.current = true;
-            if (payment) {
-              saveStoredCheckout(checkoutKey, {
-                ...payment,
-                status: "paid",
-                transactionId: responseTransactionId,
-                providerPaymentId: responseTransactionId,
-                amountInCents: data.amountInCents,
-                expiresAt: data.expiresAt ?? payment.expiresAt,
-                paidAt: data.paidAt,
-                endToEndId: data.endToEndId,
-              });
+            const orderId = currentOrderIdRef.current;
+
+            if (!orderId) {
+              hasConfirmedPaymentRef.current = false;
+              setCheckoutStatus("error");
+              setErrorMessage(
+                "Não foi possível identificar o pedido concluído."
+              );
+              setAnnouncement("Não foi possível identificar o pedido concluído.");
+              return;
             }
-            const confirmed = await onPaymentConfirmedRef.current();
+
+            const confirmed = await onPaymentConfirmedRef.current({
+              orderId,
+              transactionId: responseTransactionId,
+            });
 
             if (!confirmed) {
               hasConfirmedPaymentRef.current = false;
@@ -495,6 +413,13 @@ export function PixCheckoutSection({
             }
           }
 
+          return;
+        }
+
+        if (data.status === "cancelled") {
+          setCheckoutStatus("cancelled");
+          setAnnouncement("Pagamento cancelado.");
+          stopPolling();
           return;
         }
 
@@ -537,14 +462,13 @@ export function PixCheckoutSection({
       isActive = false;
       stopPolling();
     };
-  }, [checkoutKey, payment, showId]);
+  }, [payment, showId]);
 
   const persistPayment = (nextPayment: PixPayment) => {
     setPayment(nextPayment);
     setCheckoutStatus(mapPixStatusToCheckoutStatus(nextPayment.status));
     currentTransactionIdRef.current =
       nextPayment.transactionId ?? nextPayment.providerPaymentId;
-    saveStoredCheckout(checkoutKey, nextPayment);
   };
 
   async function createPixPayment(mode: "auto" | "manual") {
@@ -570,6 +494,7 @@ export function PixCheckoutSection({
         },
         signal: controller.signal,
         body: JSON.stringify({
+          orderId,
           customerEmail,
           selectedProtection,
           selectedQuantities,
@@ -593,7 +518,12 @@ export function PixCheckoutSection({
         return;
       }
 
+      currentOrderIdRef.current = payload.data.orderId ?? orderId;
       persistPayment(nextPayment);
+      setActivePayment(showId, {
+        ...nextPayment,
+        orderId: payload.data.orderId ?? orderId,
+      });
       setCheckoutStatus("pending");
       setAnnouncement("Pix gerado.");
       hasRequestedPixRef.current = true;
@@ -638,7 +568,6 @@ export function PixCheckoutSection({
       return;
     }
 
-    clearStoredCheckout(checkoutKey);
     setPayment(null);
     setCheckoutStatus("creating");
     setErrorMessage(null);
@@ -647,35 +576,14 @@ export function PixCheckoutSection({
     hasRequestedPixRef.current = true;
     hasConfirmedPaymentRef.current = false;
     currentTransactionIdRef.current = null;
+    currentOrderIdRef.current = null;
+    setActivePayment(showId, null);
     pollRequestRef.current?.abort();
     void createPixPayment("manual");
   };
 
-  const handleExpire = () => {
-    if (checkoutStatus === "expired") {
-      return;
-    }
-
-    pollRequestRef.current?.abort();
-    setCheckoutStatus("expired");
-    setAnnouncement("Pix expirado.");
-
-    setPayment((current) => {
-      if (!current) {
-        return current;
-      }
-
-      const nextPayment = {
-        ...current,
-        status: "expired" as const,
-      };
-
-      saveStoredCheckout(checkoutKey, nextPayment);
-      return nextPayment;
-    });
-  };
-
   const showExpiredState = checkoutStatus === "expired";
+  const showCancelledState = checkoutStatus === "cancelled";
   const showErrorState = checkoutStatus === "error";
   const showLoadingState = isLoadingState && !showExpiredState && !showErrorState;
   const currentPayment = payment;
@@ -683,6 +591,7 @@ export function PixCheckoutSection({
     currentPayment?.status === "pending" &&
     !showLoadingState &&
     !showExpiredState &&
+    !showCancelledState &&
     !showErrorState;
 
   return (
@@ -692,7 +601,7 @@ export function PixCheckoutSection({
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.18fr)_minmax(0,0.82fr)] lg:items-start">
         <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50 px-5 py-6">
           <div className="space-y-4 rounded-[20px] bg-white/80 p-4 sm:p-5">
-            <div className="flex items-center gap-2 text-slate-600">
+            <div className="flex justify-center items-center gap-2 text-slate-600">
               <ShieldCheck className="h-4 w-4 text-[#1e9bf0]" aria-hidden="true" />
               <span className="text-[0.9rem] font-medium">
                 Pagamento exclusivo via Pix
@@ -750,42 +659,39 @@ export function PixCheckoutSection({
                         </p>
                       </div>
                     </div>
-                )}
-              </div>
+                  )}
+                </div>
 
                 {payment?.copyPasteCode ? (
                   <div className="space-y-3 rounded-[20px] bg-slate-50 px-4 py-4">
                     <p className="text-[0.84rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
                       Pix copia e cola
                     </p>
-                    <div className="rounded-[16px] border border-slate-200 bg-white px-3 py-3">
+
+                    <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
                       <p className="break-all text-[0.88rem] leading-6 text-slate-700">
                         {payment.copyPasteCode}
                       </p>
                     </div>
 
                     {canCopyPayment ? (
-                      <button
-                        type="button"
-                        onClick={handleCopyPaste}
-                        className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] bg-[#1e9bf0] px-4 text-[0.92rem] font-medium text-white transition-all hover:bg-[#1787da] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
-                      >
-                        {copied ? (
-                          <Check className="h-4 w-4" aria-hidden="true" />
-                        ) : (
-                          <Copy className="h-4 w-4" aria-hidden="true" />
-                        )}
-                        <span>{copied ? "Copiado" : "Copiar código"}</span>
-                      </button>
+                      <div className="flex justify-center">
+                        <button
+                          type="button"
+                          onClick={handleCopyPaste}
+                          className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] bg-[#1e9bf0] px-4 text-[0.92rem] font-medium text-white transition-all hover:bg-[#1787da] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+                        >
+                          {copied ? (
+                            <Check className="h-4 w-4" aria-hidden="true" />
+                          ) : (
+                            <Copy className="h-4 w-4" aria-hidden="true" />
+                          )}
+
+                          <span>{copied ? "Copiado" : "Copiar código"}</span>
+                        </button>
+                      </div>
                     ) : null}
                   </div>
-                ) : null}
-
-                {payment?.expiresAt ? (
-                  <PixExpirationTimer
-                    expiresAt={payment.expiresAt}
-                    onExpire={handleExpire}
-                  />
                 ) : null}
               </>
             ) : null}
@@ -802,6 +708,34 @@ export function PixCheckoutSection({
                 <p className="mt-2 text-[0.92rem] leading-6 text-slate-600">
                   Por segurança, o código anterior não pode mais ser utilizado.
                   Gere um novo Pix para continuar.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleGenerateNewPix}
+                  aria-label="Gerar um novo código Pix"
+                  className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-[16px] bg-[#1e9bf0] px-4 text-[0.92rem] font-medium text-white transition-all hover:bg-[#1787da] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={isCreating}
+                >
+                  <RefreshCw
+                    aria-hidden="true"
+                    className={`h-4 w-4 ${isCreating ? "animate-spin" : ""}`}
+                  />
+                  <span>{isCreating ? "Gerando novo Pix..." : "Gerar novo Pix"}</span>
+                </button>
+              </div>
+            ) : null}
+
+            {showCancelledState ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="rounded-[20px] border border-slate-200 bg-slate-50 px-5 py-6 text-center"
+              >
+                <p className="text-[1rem] font-semibold tracking-[-0.03em] text-slate-950">
+                  Este Pix foi cancelado
+                </p>
+                <p className="mt-2 text-[0.92rem] leading-6 text-slate-600">
+                  Gere um novo Pix para continuar com o pagamento.
                 </p>
                 <button
                   type="button"
@@ -850,44 +784,42 @@ export function PixCheckoutSection({
           </div>
         </div>
 
-        <div className="space-y-4 rounded-[24px] bg-slate-50 px-5 py-6">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-slate-600">
+        <div className="space-y-3 rounded-[24px] bg-slate-50 px-5 py-5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 text-slate-600">
               <ShieldCheck className="h-4 w-4 text-[#1e9bf0]" aria-hidden="true" />
-              <span className="text-[0.9rem] font-medium">{statusLabel}</span>
+              <span className="text-[0.88rem] font-medium leading-5">
+                {statusLabel}
+              </span>
             </div>
 
-            {checkoutStatus === "pending" && payment?.expiresAt ? (
-              <span className="rounded-full bg-white px-3 py-1 text-[0.76rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                QR ativo
-              </span>
-            ) : null}
+
           </div>
 
-          <div className="space-y-3">
-            <div className="flex gap-3 rounded-[18px] bg-white px-4 py-3">
+          <div className="space-y-2.5">
+            <div className="flex gap-2.5 rounded-[18px] bg-white px-4 py-2.5">
               <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-50 text-[0.78rem] font-semibold text-[#1e9bf0]">
                 1
               </span>
-              <p className="text-[0.92rem] leading-6 text-slate-600">
+              <p className="text-[0.88rem] leading-5 text-slate-600">
                 Abra o aplicativo do seu banco.
               </p>
             </div>
 
-            <div className="flex gap-3 rounded-[18px] bg-white px-4 py-3">
+            <div className="flex gap-2.5 rounded-[18px] bg-white px-4 py-2.5">
               <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-50 text-[0.78rem] font-semibold text-[#1e9bf0]">
                 2
               </span>
-              <p className="text-[0.92rem] leading-6 text-slate-600">
+              <p className="text-[0.88rem] leading-5 text-slate-600">
                 Escaneie o QR Code ou copie e cole o código Pix.
               </p>
             </div>
 
-            <div className="flex gap-3 rounded-[18px] bg-white px-4 py-3">
+            <div className="flex gap-2.5 rounded-[18px] bg-white px-4 py-2.5">
               <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-50 text-[0.78rem] font-semibold text-[#1e9bf0]">
                 3
               </span>
-              <p className="text-[0.92rem] leading-6 text-slate-600">
+              <p className="text-[0.88rem] leading-5 text-slate-600">
                 Após o pagamento, sua compra será concluída automaticamente.
               </p>
             </div>

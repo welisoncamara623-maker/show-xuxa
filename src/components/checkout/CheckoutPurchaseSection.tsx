@@ -7,9 +7,6 @@ import type { TicketOption } from "@/data/shows";
 import { PageBackButton } from "@/components/navigation/PageBackButton";
 import { useTicketStore } from "@/store/ticket-store";
 import {
-  calculateFinalTotal,
-  calculateInsuranceAmount,
-  calculateTicketSubtotal,
   sumSelectedQuantities,
   type ProtectionOption,
 } from "@/lib/ticket-calculations";
@@ -24,7 +21,6 @@ import { PixCheckoutSection } from "./PixCheckoutSection";
 type CheckoutPurchaseSectionProps = {
   showId: string;
   city: string;
-  eventName: string;
   stadium: string;
   date: string;
   month: string;
@@ -57,7 +53,6 @@ function EmptyCheckoutState({ showId }: { showId: string }) {
 export function CheckoutPurchaseSection({
   showId,
   city,
-  eventName,
   stadium,
   date,
   month,
@@ -71,35 +66,30 @@ export function CheckoutPurchaseSection({
   const [isSavingEmail, setIsSavingEmail] = useState(false);
 
   const showState = useTicketStore((state) => state.shows[showId]);
-  const checkoutDraft = useTicketStore((state) => state.checkoutDrafts[showId]);
   const setCustomerEmail = useTicketStore((state) => state.setCustomerEmail);
+  const checkoutDraft = useTicketStore(
+    (state) => state.shows[showId]?.checkoutDraft ?? null
+  );
+  const setLastCompletedOrder = useTicketStore(
+    (state) => state.setLastCompletedOrder
+  );
+  const confirmLocalPurchase = useTicketStore(
+    (state) => state.confirmLocalPurchase
+  );
 
   const selectedQuantities = showState?.selectedQuantities ?? {};
   const totalSelected = sumSelectedQuantities(selectedQuantities);
-  const draftEmail = checkoutDraft?.customerEmail?.trim() ?? "";
+  const draftEmail = showState?.customerEmail?.trim() ?? "";
   const selectedProtection: ProtectionOption =
-    checkoutDraft?.selectedProtection ??
-    showState?.selectedProtection ??
-    "ticket-only";
-
-  const ticketSubtotalInCents = calculateTicketSubtotal(
-    tickets,
-    selectedQuantities
-  );
-  const insuranceAmountInCents =
-    selectedProtection === "ticket-with-insurance"
-      ? calculateInsuranceAmount(ticketSubtotalInCents)
-      : 0;
-  const finalTotalInCents = calculateFinalTotal(
-    ticketSubtotalInCents,
-    selectedProtection
-  );
+    showState?.selectedProtection ?? "ticket-only";
+  const orderId = checkoutDraft?.orderId ?? "";
 
   const hasCheckoutData =
     Boolean(showState) &&
     totalSelected > 0 &&
     Boolean(draftEmail) &&
-    Boolean(checkoutDraft);
+    Boolean(showState?.customerEmail) &&
+    Boolean(orderId);
 
   const handleEditEmail = () => {
     if (!hasCheckoutData || isSavingEmail) {
@@ -129,16 +119,72 @@ export function CheckoutPurchaseSection({
     return true;
   };
 
-  const handlePaymentConfirmed = async () => {
-    const result = useTicketStore
-      .getState()
-      .finalizePurchase(showId, selectedProtection);
-
-    if (!result.success) {
+  const handlePaymentConfirmed = async (input: {
+    orderId: string;
+    transactionId: string;
+  }) => {
+    if (!input.orderId || !input.transactionId) {
       return false;
     }
 
-    router.push(`/shows/${showId}/success`);
+    const response = await fetch(`/api/shows/${showId}/checkout/confirm`, {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        orderId: input.orderId,
+        transactionId: input.transactionId,
+        customerEmail: draftEmail,
+        selectedProtection,
+        selectedQuantities,
+      }),
+    });
+
+    const payload = (await response.json()) as
+      | {
+          paymentConfirmed: true;
+          emailSent: boolean;
+          order: {
+            id: string;
+            showId: string;
+            customerEmail: string;
+            items: Array<{
+              ticketId: string;
+              sector: string;
+              category: string;
+              quantity: number;
+              unitPriceInCents: number;
+              lineTotalInCents: number;
+            }>;
+            protection: ProtectionOption;
+            ticketSubtotalInCents: number;
+            insuranceInCents: number;
+            finalTotalInCents: number;
+            transactionId: string;
+            completedAt: string;
+            emailStatus: "sent" | "unknown";
+          };
+        }
+      | {
+          paymentConfirmed: false;
+          emailSent: false;
+          error?: string;
+        };
+
+    if (!response.ok || !("paymentConfirmed" in payload) || !payload.paymentConfirmed) {
+      return false;
+    }
+
+    const totalQuantity = sumSelectedQuantities(selectedQuantities);
+
+    confirmLocalPurchase(showId, input.orderId, totalQuantity);
+    setLastCompletedOrder(showId, payload.order);
+
+    router.push(
+      `/shows/${showId}/success?orderId=${encodeURIComponent(input.orderId)}`
+    );
     return true;
   };
 
@@ -152,15 +198,12 @@ export function CheckoutPurchaseSection({
         <CheckoutHeader
           backHref={`/shows/${showId}/protection`}
           city={city}
-          eventName={eventName}
         />
 
         <CheckoutSteps activeStep={3} />
 
         <div className="space-y-6">
           <CheckoutEventSummary
-            city={city}
-            eventName={eventName}
             stadium={stadium}
             date={date}
             month={month}
@@ -172,14 +215,11 @@ export function CheckoutPurchaseSection({
           <CheckoutOrderSummary
             customerEmail={draftEmail}
             onEditEmail={handleEditEmail}
-            selectedProtection={selectedProtection}
-            ticketSubtotalInCents={ticketSubtotalInCents}
-            insuranceAmountInCents={insuranceAmountInCents}
-            finalTotalInCents={finalTotalInCents}
           />
 
           <PixCheckoutSection
             showId={showId}
+            orderId={orderId}
             customerEmail={draftEmail}
             selectedProtection={selectedProtection}
             selectedQuantities={selectedQuantities}

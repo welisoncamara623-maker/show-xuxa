@@ -68,7 +68,7 @@ export async function normalizeBlackCatPixPayment(
       response.data.status === "PAID"
         ? "paid"
         : response.data.status === "CANCELLED"
-          ? "expired"
+          ? "cancelled"
           : "pending",
     amountInCents: response.data.amount,
     copyPasteCode: copyPasteCode ?? "",

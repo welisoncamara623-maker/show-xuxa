@@ -39,6 +39,7 @@ export type PixPaymentStatus =
   | "pending"
   | "paid"
   | "failed"
+  | "cancelled"
   | "expired"
   | "refunded";
 

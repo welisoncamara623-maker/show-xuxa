@@ -47,7 +47,6 @@ export default async function CheckoutPage(props: CheckoutPageProps) {
       <CheckoutPurchaseSection
         showId={show.id}
         city={show.city}
-        eventName={show.eventName}
         stadium={show.stadium}
         date={show.card.date}
         month={show.card.month}
